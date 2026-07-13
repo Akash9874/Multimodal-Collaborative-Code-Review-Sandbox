@@ -5,7 +5,8 @@ test('the landing page mints a room and routes to it', async ({ page }) => {
   await page.getByTestId('create-room').click();
 
   await expect(page).toHaveURL(/\/s\/[A-Za-z0-9_-]{10}$/);
-  await expect(page.getByTestId('room-id')).toBeVisible();
+  // A first-time visitor is asked who they are before the workspace opens.
+  await expect(page.getByRole('button', { name: 'Join sandbox' })).toBeVisible();
 });
 
 test('an invalid room id is a 404', async ({ page }) => {
