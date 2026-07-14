@@ -9,6 +9,18 @@ import { PISTON_RUNTIMES } from '../../packages/shared/dist/index.js';
 
 const BASE = process.env.PISTON_URL ?? 'http://localhost:2000/api/v2';
 
+/**
+ * Piston has two namespaces and they do not agree. The *package* you install is `node`; the
+ * *runtime* you then execute is `javascript`. The versions match — the runtime version is the
+ * package version — so only the name needs translating, and only here: the application never
+ * installs a package, so this mapping has no business in @sandbox/shared.
+ */
+const PACKAGE_FOR = {
+  python: 'python',
+  javascript: 'node',
+  typescript: 'typescript',
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const waitForPiston = async () => {
@@ -32,7 +44,8 @@ const waitForPiston = async () => {
   process.exit(1);
 };
 
-const installed = async () => {
+/** What can actually be executed right now, in the execute namespace. */
+const runnable = async () => {
   const response = await fetch(`${BASE}/runtimes`);
   const runtimes = await response.json();
   return new Set(runtimes.map((runtime) => `${runtime.language}@${runtime.version}`));
@@ -40,51 +53,69 @@ const installed = async () => {
 
 await waitForPiston();
 
-const present = await installed();
+let available = await runnable();
 
-for (const { language, version } of Object.values(PISTON_RUNTIMES)) {
-  const key = `${language}@${version}`;
+for (const [id, runtime] of Object.entries(PISTON_RUNTIMES)) {
+  const key = `${runtime.language}@${runtime.version}`;
 
-  if (present.has(key)) {
+  if (available.has(key)) {
     console.log(`✓ ${key} already installed`);
     continue;
   }
 
-  console.log(`↓ installing ${key} — this pulls a package and is slow the first time`);
+  const packageName = PACKAGE_FOR[id];
+  console.log(`↓ installing ${packageName}@${runtime.version} (runs as ${key}) — slow the first time`);
 
   const response = await fetch(`${BASE}/packages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ language, version }),
+    body: JSON.stringify({ language: packageName, version: runtime.version }),
   });
 
   if (!response.ok) {
-    console.error(`✗ ${key} failed: HTTP ${response.status} ${await response.text()}`);
+    console.error(`✗ ${packageName}@${runtime.version} failed: HTTP ${response.status} ${await response.text()}`);
     process.exit(1);
   }
 
   console.log(`✓ ${key}`);
 }
 
-// Prove it end to end, rather than trusting the install endpoint's word for it.
-const smoke = await fetch(`${BASE}/execute`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    language: PISTON_RUNTIMES.python.language,
-    version: PISTON_RUNTIMES.python.version,
-    files: [{ name: 'main.py', content: 'print(6*7)' }],
-    stdin: '',
-    run_timeout: 5_000,
-  }),
-});
+// Prove every language actually runs, rather than trusting the install endpoint's word for it.
+// A smoke test of python alone would have missed that `javascript` installs under the name `node`.
+available = await runnable();
 
-const result = await smoke.json();
+const SMOKE = {
+  python: { file: 'main.py', code: 'print(6*7)' },
+  javascript: { file: 'main.js', code: 'console.log(6*7)' },
+  typescript: { file: 'main.ts', code: 'const answer: number = 6 * 7; console.log(answer);' },
+};
 
-if (result?.run?.stdout?.trim() !== '42') {
-  console.error('✗ piston is up but cannot run python:', JSON.stringify(result));
-  process.exit(1);
+console.log();
+
+for (const [id, runtime] of Object.entries(PISTON_RUNTIMES)) {
+  const { file, code } = SMOKE[id];
+
+  const response = await fetch(`${BASE}/execute`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      language: runtime.language,
+      version: runtime.version,
+      files: [{ name: file, content: code }],
+      stdin: '',
+      run_timeout: 5_000,
+    }),
+  });
+
+  const result = await response.json();
+
+  if (result?.run?.stdout?.trim() !== '42') {
+    console.error(`✗ ${id} is installed but cannot run:`, JSON.stringify(result));
+    process.exit(1);
+  }
+
+  console.log(`✓ ${id} runs`);
 }
 
-console.log('\npiston is ready. Point the server at it with:');
+console.log('\npiston is ready. The server picks it up from:');
 console.log(`  PISTON_URL=${BASE}`);

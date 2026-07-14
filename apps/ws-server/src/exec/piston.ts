@@ -1,14 +1,29 @@
-import { EXECUTOR_TIMEOUT_MS, PISTON_RUNTIMES, RUN_TIMEOUT_MS } from '@sandbox/shared';
+import {
+  EXECUTOR_TIMEOUT_MS,
+  type LanguageId,
+  PISTON_RUNTIMES,
+  RUN_TIMEOUT_MS,
+} from '@sandbox/shared';
 import { type CodeExecutor, type ExecRequest, type ExecResult, ExecutorError } from './executor';
 
 type PistonStage = {
   stdout: string;
   stderr: string;
+  /** Piston's merged stream. The only field that holds a compiler's diagnostics reliably. */
+  output: string;
   code: number | null;
   signal: string | null;
 };
 
 type PistonResponse = { run: PistonStage; compile?: PistonStage };
+
+/**
+ * Piston's TypeScript runner copies the file to `<name>.ts` before compiling it, so a file we
+ * call `main.ts` reaches tsc as `main.ts.ts` and every diagnostic says so. Send the stem and let
+ * Piston put the extension back.
+ */
+const pistonFileName = (language: LanguageId, fileName: string): string =>
+  language === 'typescript' ? fileName.replace(/\.ts$/, '') : fileName;
 
 /**
  * The public Piston API, and the highest-priority NFR in the whole project: user code never runs
@@ -26,19 +41,21 @@ export class PistonExecutor implements CodeExecutor {
     const response = await this.post({
       language: runtime.language,
       version: runtime.version,
-      files: [{ name: fileName, content: code }],
+      files: [{ name: pistonFileName(language, fileName), content: code }],
       stdin,
       run_timeout: RUN_TIMEOUT_MS,
     });
 
     const durationMs = Date.now() - startedAt;
 
-    // TypeScript compiles first; a compile failure never reaches the run stage, and its stderr is
-    // the only thing the user needs to see.
+    // TypeScript compiles first, and a compile failure never reaches the run stage. Read `output`,
+    // not `stderr`: tsc writes its diagnostics to *stdout*, so `compile.stderr` is empty even for a
+    // hard type error, and trusting it would show the user "Compilation failed." and throw the
+    // actual error away.
     if (response.compile && response.compile.code !== 0) {
       return {
         stdout: '',
-        stderr: response.compile.stderr || 'Compilation failed.',
+        stderr: response.compile.output || response.compile.stderr || 'Compilation failed.',
         exitCode: response.compile.code ?? 1,
         durationMs,
       };

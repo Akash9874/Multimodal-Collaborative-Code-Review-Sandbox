@@ -12,10 +12,17 @@ const respondWith = (body: unknown, status = 200) =>
     );
 
 const stage = (
-  over: Partial<{ stdout: string; stderr: string; code: number | null; signal: string | null }> = {},
+  over: Partial<{
+    stdout: string;
+    stderr: string;
+    output: string;
+    code: number | null;
+    signal: string | null;
+  }> = {},
 ) => ({
   stdout: '',
   stderr: '',
+  output: '',
   code: 0,
   signal: null,
   ...over,
@@ -57,27 +64,56 @@ test('the request pins the runtime version — `typescript` alone is ambiguous o
   const body = JSON.parse(init.body as string);
   expect(body.language).toBe('typescript');
   expect(body.version).toBe('5.0.3'); // the Node runtime, not Deno's 1.32.3
-  expect(body.files).toEqual([{ name: 'main.ts', content: 'console.log(1)' }]);
+
+  // Piston's TypeScript runner copies the file to `<name>.ts` before compiling. Send `main.ts`
+  // and every diagnostic reads `main.ts.ts(1,7): …`. Send the stem; Piston adds the extension.
+  expect(body.files).toEqual([{ name: 'main', content: 'console.log(1)' }]);
+});
+
+test('python and javascript keep their real filenames', async () => {
+  const fetchMock = respondWith({ run: stage() });
+  vi.stubGlobal('fetch', fetchMock);
+
+  await new PistonExecutor(BASE).run({
+    language: 'python',
+    fileName: 'main.py',
+    code: 'print(1)',
+    stdin: '',
+  });
+
+  const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(JSON.parse(init.body as string).files).toEqual([
+    { name: 'main.py', content: 'print(1)' },
+  ]);
 });
 
 test('a compile failure surfaces the compiler error, not an empty success', async () => {
+  // This is what Piston really returns for a TypeScript type error: tsc writes its diagnostics to
+  // *stdout*, so `compile.stderr` is empty. Reading stderr here would show the user
+  // "Compilation failed." and throw the actual error away.
   vi.stubGlobal(
     'fetch',
     respondWith({
-      compile: stage({ stderr: "main.ts(1,1): error TS2304: Cannot find name 'nope'.", code: 2 }),
-      run: stage(),
+      compile: stage({
+        stdout: "main.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+        stderr: '',
+        output: "main.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+        code: 2,
+      }),
+      run: stage({ code: 2 }),
     }),
   );
 
   const result = await new PistonExecutor(BASE).run({
     language: 'typescript',
     fileName: 'main.ts',
-    code: 'nope()',
+    code: 'const x: number = "nope";',
     stdin: '',
   });
 
   expect(result.exitCode).toBe(2);
-  expect(result.stderr).toContain('TS2304');
+  expect(result.stderr).toContain('TS2322');
+  expect(result.stderr).not.toBe('Compilation failed.');
 });
 
 test('a process killed by the sandbox is an error, never a silent exit 0', async () => {
