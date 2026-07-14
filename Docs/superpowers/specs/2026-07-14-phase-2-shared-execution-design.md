@@ -64,7 +64,7 @@ apps/ws-server/src/
     piston.ts       PistonExecutor → POST ${PISTON_URL}/execute
     limiter.ts      token bucket; injected clock; pure
     runs.ts         RunStore interface + MemoryRunStore (ring buffer)
-    rooms.ts        ExecRoom registry: connections + run log, grace-period eviction
+    rooms.ts        ExecRoom registry: connections only
     protocol.ts     zod schemas inbound; encoders outbound
     connection.ts   setupExecConnection(conn, execRoom, deps)
   server.ts         + /exec/<roomId> upgrade route; createSandboxServer({ executor, store, now })
@@ -184,9 +184,23 @@ observe the same pending run and execute it twice.
 | `MAX_STDIN_BYTES` | 4 KiB | Same. |
 | `MAX_OUTPUT_BYTES` | 64 KiB per stream | A runaway print loop must not blow up every client's memory or the ring buffer. Truncated with an explicit `… output truncated` marker — never silently. |
 | `RUN_HISTORY_LIMIT` | 50 runs per room | Ring buffer. Enough to scroll back through a session. |
-| `EXECUTOR_TIMEOUT_MS` | 15 000 | `AbortController` ceiling on the Piston call, so a hung executor cannot hang the room. |
+| `RUN_STORE_MAX_ROOMS` | 200 rooms | LRU cap on `MemoryRunStore`. Without it a long-lived server keeps the history of every room it has ever seen. |
+| `RUN_TIMEOUT_MS` | 5 000 | Sent to Piston as `run_timeout`. The PRD's NFR §5.1 names 5s as the max execution time. |
+| `EXECUTOR_TIMEOUT_MS` | 15 000 | `AbortSignal.timeout` ceiling on the whole Piston call — a generous outer bound over `RUN_TIMEOUT_MS` that covers queueing, so a hung executor cannot hang the room. |
 | Rate limit, per room | 1 run / 2 s | Piston's public instance allows roughly 5 req/s **across all its users**. |
 | Rate limit, per IP | 20 runs / min | Hammering it is both rude and the fastest way to get the demo blocked. |
+
+### 4.4 Pinned runtimes
+
+Piston lists **two** TypeScript runtimes and **two** JavaScript runtimes — one pair on Node, one on
+Deno — so `language: 'typescript'` on its own is ambiguous. The version is always sent explicitly.
+Verified against `GET https://emkc.org/api/v2/piston/runtimes` on 2026-07-14:
+
+| `LanguageId` | Piston language | Version |
+|---|---|---|
+| `python` | `python` | `3.10.0` |
+| `javascript` | `javascript` | `18.15.0` (Node) |
+| `typescript` | `typescript` | `5.0.3` (Node, **not** the Deno `1.32.3`) |
 
 ## 5. Components
 
@@ -243,10 +257,13 @@ trusted with it.**
 
 ### 5.4 `RunStore` and `ExecRoom`
 
-`RunStore` is `append(record)` / `list(roomId)`. `MemoryRunStore` is a per-room ring buffer of
-`RUN_HISTORY_LIMIT`. `ExecRoom` holds the room's exec connections and broadcasts to all of them,
-mirroring the shape of the sync `Room` (create, release, grace-period eviction, `reset()` for tests)
-without sharing its code — they have nothing in common but a name.
+`RunStore` is `append` / `update` / `list(roomId)`. `MemoryRunStore` is a per-room ring buffer of
+`RUN_HISTORY_LIMIT`, itself held in an LRU of at most `RUN_STORE_MAX_ROOMS` rooms — without that
+outer cap a long-lived server accumulates the history of every room it has ever seen.
+
+`ExecRoom` holds **only** the room's exec connections, and is deleted the moment the last one leaves.
+It needs no grace period, because it has nothing to preserve: the run history lives in the `RunStore`,
+which outlives it. (The sync `Room` needs its 30s grace because it holds the Y.Doc itself.)
 
 On connect, a client is immediately sent `{ type: 'run:history', runs }` — possibly empty, always
 sent, so the terminal can distinguish "loaded, nothing here" from "still loading".
