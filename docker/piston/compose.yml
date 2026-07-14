@@ -1,0 +1,31 @@
+# A self-hosted Piston. The public instance (emkc.org) became whitelist-only on 2026-02-15:
+# GET /runtimes still answers, POST /execute returns 401. The master spec's §12 risk table named
+# this exact mitigation — "the CodeExecutor seam allows self-hosting Piston later" — and it costs
+# us no application code at all: only PISTON_URL moves.
+#
+#   pnpm piston:up      boot it and install the runtimes we pin in @sandbox/shared
+#   pnpm piston:down    stop it
+#
+# `privileged` is not optional: Piston isolates each run with nsjail/cgroups, which needs the
+# capabilities to create namespaces. That is precisely the isolation the highest-priority NFR is
+# asking for — user code runs in there, never on the host.
+
+services:
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    container_name: crdt-sandbox-piston
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - '2000:2000'
+    volumes:
+      - piston-packages:/piston/packages
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'wget -qO- http://localhost:2000/api/v2/runtimes || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  piston-packages:

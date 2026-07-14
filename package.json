@@ -9,7 +9,10 @@
     "build": "pnpm --filter @sandbox/shared build && pnpm --filter @sandbox/web build",
     "typecheck": "pnpm --filter @sandbox/shared build && pnpm -r typecheck",
     "test": "pnpm --filter @sandbox/shared build && pnpm -r test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "piston:up": "pnpm --filter @sandbox/shared build && docker compose -f docker/piston/compose.yml up -d && node docker/piston/install-runtimes.mjs",
+    "piston:down": "docker compose -f docker/piston/compose.yml down",
+    "piston:logs": "docker compose -f docker/piston/compose.yml logs -f"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
