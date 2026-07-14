@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import * as Y from 'yjs';
 import { DEFAULT_FILE } from './model.js';
-import { getFileText, listFiles, seedDoc } from './doc.js';
+import { getFileText, getFilesMap, listFiles, seedDoc, setFileLanguage } from './doc.js';
 
 test('seedDoc creates exactly one default file, with content', () => {
   const doc = new Y.Doc();
@@ -33,4 +33,34 @@ test('listFiles is ordered by creation time', () => {
   });
 
   expect(listFiles(doc).map((f) => f.id)).toEqual(['main', 'later']);
+});
+
+test('setFileLanguage moves the extension with the language', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+
+  setFileLanguage(doc, DEFAULT_FILE.id, 'javascript');
+
+  const file = getFilesMap(doc).get(DEFAULT_FILE.id);
+  // Piston keys off the filename for JS/TS: a file called main.py holding JavaScript will not run.
+  expect(file?.name).toBe('main.js');
+  expect(file?.language).toBe('javascript');
+});
+
+test('setFileLanguage does not touch the file content', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+  const before = getFileText(doc, DEFAULT_FILE.id).toString();
+
+  setFileLanguage(doc, DEFAULT_FILE.id, 'typescript');
+
+  expect(getFileText(doc, DEFAULT_FILE.id).toString()).toBe(before);
+});
+
+test('setFileLanguage ignores an unknown file', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+
+  expect(() => setFileLanguage(doc, 'nope', 'javascript')).not.toThrow();
+  expect(listFiles(doc)).toHaveLength(1);
 });

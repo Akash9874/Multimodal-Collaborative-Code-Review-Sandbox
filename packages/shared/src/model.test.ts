@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_NAME_LENGTH, isValidRoomId, sanitizeName } from './model.js';
+import { MAX_NAME_LENGTH, isValidRoomId, renameExtension, sanitizeName } from './model.js';
 
 describe('isValidRoomId', () => {
   test('accepts a nanoid-shaped id', () => {
@@ -27,5 +27,19 @@ describe('sanitizeName', () => {
 
   test('truncates to MAX_NAME_LENGTH', () => {
     expect(sanitizeName('x'.repeat(100))).toHaveLength(MAX_NAME_LENGTH);
+  });
+});
+
+describe('renameExtension', () => {
+  test('swaps the extension', () => {
+    expect(renameExtension('main.py', '.js')).toBe('main.js');
+  });
+
+  test('adds one to a name that has none', () => {
+    expect(renameExtension('main', '.py')).toBe('main.py');
+  });
+
+  test('leaves a dotfile its leading dot', () => {
+    expect(renameExtension('.env', '.py')).toBe('.env.py');
   });
 });

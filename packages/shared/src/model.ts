@@ -13,6 +13,13 @@ export const sanitizeName = (raw: string): string =>
     .slice(0, MAX_NAME_LENGTH)
     .trim();
 
+/** `main.py` + `.js` → `main.js`. `dot > 0`, not `>= 0`, so `.env` keeps its leading dot as the stem. */
+export const renameExtension = (name: string, extension: string): string => {
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  return `${stem}${extension}`;
+};
+
 export const LANGUAGES = {
   python: { label: 'Python', monaco: 'python', extension: '.py' },
   javascript: { label: 'JavaScript', monaco: 'javascript', extension: '.js' },
