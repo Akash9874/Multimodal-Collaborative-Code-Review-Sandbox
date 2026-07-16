@@ -53,10 +53,10 @@ export const createSandboxServer = (options: SandboxServerOptions = {}): Server 
 
     const ip = req.socket.remoteAddress ?? 'unknown';
 
-    wss.handleUpgrade(req, socket, head, (conn) => {
+    wss.handleUpgrade(req, socket, head, async (conn) => {
       // Two sockets, on purpose. /sync is a pure relay that never parses document semantics;
       // /exec is the single execution authority.
-      if (prefix === 'sync') setupSyncConnection(conn, getOrCreateRoom(roomId));
+      if (prefix === 'sync') setupSyncConnection(conn, await getOrCreateRoom(roomId));
       else setupExecConnection(conn, getOrCreateExecRoom(roomId), ip, deps);
     });
   });
