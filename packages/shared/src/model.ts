@@ -55,6 +55,17 @@ export type Stroke = {
   createdAt: number;
 };
 
+/** The one stroke width. There is no width UI in Phase 3 — a width picker is a later additive change. */
+export const STROKE_WIDTH = 3;
+
+/** The in-progress stroke, broadcast over awareness while drawing and cleared on pointer-up. */
+export type DraftStroke = {
+  fileId: string;
+  color: string;
+  width: number;
+  shape: Shape;
+};
+
 export type User = { id: string; name: string; color: string };
 
 /** y-monaco writes its own `selection` field (Yjs relative positions) into awareness. */
@@ -62,6 +73,7 @@ export type AwarenessState = {
   user: User;
   activeFileId: string;
   pointer?: { fileId: string; x: number; y: number };
+  draft?: DraftStroke;
 };
 
 export const DOC_FILES_KEY = 'files';
