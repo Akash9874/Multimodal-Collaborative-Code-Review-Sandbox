@@ -12,7 +12,12 @@
     "test:e2e": "playwright test",
     "piston:up": "pnpm --filter @sandbox/shared build && docker compose -f docker/piston/compose.yml up -d && node docker/piston/install-runtimes.mjs",
     "piston:down": "docker compose -f docker/piston/compose.yml down",
-    "piston:logs": "docker compose -f docker/piston/compose.yml logs -f"
+    "piston:logs": "docker compose -f docker/piston/compose.yml logs -f",
+    "db:up": "docker compose -f docker/postgres/compose.yml up -d --wait && node apps/ws-server/scripts/migrate.mjs --local",
+    "db:down": "docker compose -f docker/postgres/compose.yml down",
+    "db:reset": "docker compose -f docker/postgres/compose.yml down -v",
+    "db:logs": "docker compose -f docker/postgres/compose.yml logs -f",
+    "db:migrate": "node apps/ws-server/scripts/migrate.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

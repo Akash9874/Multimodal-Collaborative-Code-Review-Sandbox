@@ -66,17 +66,33 @@ now returns 401 — so `PISTON_URL` defaults to a self-hosted Piston at `http://
 it. Editing and presence work without it; only the Run button needs it. Point `PISTON_URL` at any
 other Piston instance to swap it out — that env var is the only thing that moves.
 
-**On the database.** Persistence uses **Supabase Postgres**. Set `DATABASE_URL` to your Supabase
-session-pooler connection string and apply [`apps/ws-server/sql/001_persistence.sql`](apps/ws-server/sql/001_persistence.sql)
-once (Supabase SQL editor, or `pnpm --filter @sandbox/ws-server db:migrate`). Without `DATABASE_URL`
-the app still runs — editing and drawing work — but rooms are in-memory and do not survive a restart.
-Point it at a **development** database when running the tests: the TTL sweep the Postgres suite
-exercises is global, so it deletes any room older than its cutoff, not only the suite's own rows.
+**On the database.** Without `DATABASE_URL` the app still runs — editing and drawing work — but rooms
+are in-memory and do not survive a restart. Everything reads one `DATABASE_URL`, so local Postgres
+and Supabase are the same switch.
+
+For development and for the tests, use the local one:
+
+```bash
+pnpm db:up        # boots Postgres in Docker and applies the migration; prints the DATABASE_URL
+pnpm db:down      # stop it        (pnpm db:reset also deletes the data)
+```
+
+For a deployed instance, use **Supabase Postgres**: take the **Session pooler** connection string
+(port 5432 — the server is a long-lived process holding a pool, which is what session mode is for),
+set `DATABASE_URL` to it, and apply the migration once with `pnpm db:migrate`, or by pasting
+[`apps/ws-server/sql/001_persistence.sql`](apps/ws-server/sql/001_persistence.sql) into the Supabase
+SQL editor. The schema is vanilla Postgres — `BYTEA`, upsert, one index — so the two are the same
+database as far as this code is concerned.
+
+Point the tests at a **development** database, never a real one: the TTL sweep the Postgres suite
+exercises is global by nature, so it deletes any room older than its cutoff, not only the suite's
+own rows.
 
 ## Tests
 
 ```bash
-pnpm test         # 115 unit + integration tests (Vitest), + 4 Postgres tests that need DATABASE_URL
+pnpm db:up        # a local Postgres in Docker, migrated — needed by the persistence tests
+pnpm test         # 117 unit + integration tests (Vitest), + 4 Postgres tests that need DATABASE_URL
 pnpm test:e2e     # 14 browser tests (Playwright), incl. two browsers drawing over one document
 pnpm typecheck
 ```
