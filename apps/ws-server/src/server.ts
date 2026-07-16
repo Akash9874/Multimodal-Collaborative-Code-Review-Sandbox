@@ -63,12 +63,31 @@ export const createSandboxServer = (options: SandboxServerOptions = {}): Server 
 
     const ip = req.socket.remoteAddress ?? 'unknown';
 
-    wss.handleUpgrade(req, socket, head, async (conn) => {
-      // Two sockets, on purpose. /sync is a pure relay that never parses document semantics;
-      // /exec is the single execution authority.
-      if (prefix === 'sync') setupSyncConnection(conn, await getOrCreateRoom(roomId));
-      else setupExecConnection(conn, getOrCreateExecRoom(roomId), ip, deps);
-    });
+    // Two sockets, on purpose. /sync is a pure relay that never parses document semantics;
+    // /exec is the single execution authority.
+    if (prefix === 'exec') {
+      wss.handleUpgrade(req, socket, head, (conn) => {
+        setupExecConnection(conn, getOrCreateExecRoom(roomId), ip, deps);
+      });
+      return;
+    }
+
+    // The room is resolved BEFORE the handshake, never inside the upgrade callback. A client
+    // sends sync step 1 the instant the 101 response lands;;a handler attached after an awaited
+    // load would miss it, and the client would then hold an empty document forever, waiting for a
+    // reply to a message nobody heard. Awaiting out here means the socket is not open yet, so
+    // there is no window to lose a message in. (With an in-memory store the load settles on the
+    // microtask queue and the window is zero — which is why only a real database shows this.)
+    void getOrCreateRoom(roomId).then(
+      (room) => {
+        if (socket.destroyed) return; // gave up while we were loading
+        wss.handleUpgrade(req, socket, head, (conn) => setupSyncConnection(conn, room));
+      },
+      (error) => {
+        console.error(`[sync] could not open room ${roomId}:`, error);
+        socket.destroy();
+      },
+    );
   });
 
   return http;
