@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:migrate": "psql \"$DATABASE_URL\" -f sql/001_persistence.sql"
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@sandbox/shared": "workspace:*",

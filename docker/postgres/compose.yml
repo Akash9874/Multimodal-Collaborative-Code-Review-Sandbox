@@ -1,0 +1,36 @@
+# A local Postgres, for running the persistence tests against a real database.
+#
+#   pnpm db:up        boot it and apply the migration
+#   pnpm db:down      stop it (the volume survives)
+#   pnpm db:reset     stop it and delete the data
+#
+# Production is Supabase Postgres; this is not a second implementation of anything. The schema uses
+# only vanilla Postgres — BYTEA, upsert, one index — so a local instance and Supabase are the same
+# database as far as this code is concerned, and the same DATABASE_URL points at either.
+#
+# Use this, not your Supabase project, for the tests. The TTL sweep the Postgres suite exercises
+# (`deleteStale`) is global by nature: it deletes every room older than its cutoff, not only the
+# suite's own rows. Pointed at a database with real rooms, the tests would take them with it.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crdt-sandbox-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 3s
+
+volumes:
+  postgres-data:
