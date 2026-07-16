@@ -5,6 +5,7 @@ import { DEFAULT_FILE, LANGUAGES, getFileText } from '@sandbox/shared';
 import type { editor } from 'monaco-editor';
 import { useEffect, useRef, useState } from 'react';
 import { MonacoBinding } from 'y-monaco';
+import { CanvasOverlay } from './CanvasOverlay';
 import { useExecContext } from '@/lib/exec/ExecContext';
 import { setupMonaco } from '@/lib/monaco/setup';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
@@ -54,21 +55,24 @@ export function CodeEditor() {
   }, [instance, monaco, file]);
 
   return (
-    <Editor
-      height="100%"
-      theme="vs-dark"
-      path={DEFAULT_FILE.name}
-      defaultLanguage={LANGUAGES[DEFAULT_FILE.language].monaco}
-      options={{
-        minimap: { enabled: false },
-        fontSize: 14,
-        automaticLayout: true,
-        scrollBeyondLastLine: false,
-      }}
-      onMount={setInstance}
-      loading={
-        <div className="grid h-full place-items-center text-neutral-500">Loading editor…</div>
-      }
-    />
+    <div className="relative h-full">
+      <Editor
+        height="100%"
+        theme="vs-dark"
+        path={DEFAULT_FILE.name}
+        defaultLanguage={LANGUAGES[DEFAULT_FILE.language].monaco}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 14,
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+        }}
+        onMount={setInstance}
+        loading={
+          <div className="grid h-full place-items-center text-neutral-500">Loading editor…</div>
+        }
+      />
+      {instance && <CanvasOverlay instance={instance} />}
+    </div>
   );
 }

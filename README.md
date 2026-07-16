@@ -3,7 +3,7 @@
 A zero-install web workspace where several people edit code together, draw architecture
 directly over that code, and run it — seeing the same output at the same moment.
 
-**Status:** Phase 2 of 5 complete — real-time collaborative editing, and shared execution.
+**Status:** Phase 3 of 5 complete — collaborative editing, shared execution, and a drawing overlay.
 Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md)
 
 ## What works today
@@ -13,6 +13,10 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
 - Remote cursors and selections, coloured per user, with name tags.
 - A presence bar showing who is here, and a live connection status.
 - Edits made while offline merge on reconnect — that is the CRDT, not a retry queue.
+- Toggle **Draw** and mark up the code — freehand, arrows, boxes, and short text labels, in your own
+  colour. Everyone sees your drawing pinned to the same code, even when they are scrolled elsewhere,
+  and watches your pen move live as you draw.
+- The eraser removes any stroke by hit-test; undo removes your own last stroke.
 - Anyone presses **Run** (or `Ctrl`/`Cmd`+`Enter`) and *everyone* sees the same stdout and stderr
   appear in the same terminal at the same moment — with stdin echoed, so the output makes sense to
   the people who did not type it.
@@ -34,6 +38,10 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
   rate-limits, calls Piston, and broadcasts the result to the room. Run requests deliberately do
   *not* go through the CRDT — that would force the relay to understand the document, and every
   server instance would execute the same pending run.
+- **The canvas is an SVG layer over Monaco**, and drawings are stored in *content* space, not screen
+  space — so a stroke over line 12 is on line 12 for everyone, whatever their scroll. A hard Code/Draw
+  `pointer-events` switch keeps the canvas and editor from fighting over the pointer. Strokes are
+  ordinary Y.Doc state and sync through the same pure relay; the live in-progress pen rides on awareness.
 
 ## Running it
 
@@ -54,8 +62,8 @@ other Piston instance to swap it out — that env var is the only thing that mov
 ## Tests
 
 ```bash
-pnpm test         # 89 unit + integration tests (Vitest)
-pnpm test:e2e     # 8 browser tests (Playwright), incl. two real browsers running one program
+pnpm test         # 107 unit + integration tests (Vitest)
+pnpm test:e2e     # 13 browser tests (Playwright), incl. two browsers drawing over one document
 pnpm typecheck
 ```
 
@@ -67,8 +75,7 @@ tests call a real Piston, so `pnpm piston:up` must be running first.
 
 ## Not built yet
 
-The overlay drawing canvas (Phase 3), Postgres persistence and multi-file support (Phase 4),
-line-anchored annotations and deployment (Phase 5).
+Postgres persistence and multi-file support (Phase 4), line-anchored annotations and deployment (Phase 5).
 
 ## A note on access
 

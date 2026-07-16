@@ -57,3 +57,27 @@ export const setFileLanguage = (doc: Y.Doc, fileId: string, language: LanguageId
     name: renameExtension(file.name, LANGUAGES[language].extension),
   });
 };
+
+/** Commit a finished stroke. Called on pointer-up; the draft in awareness is cleared separately. */
+export const appendStroke = (doc: Y.Doc, stroke: Stroke): void => {
+  getStrokes(doc).push([stroke]);
+};
+
+/** Delete a stroke by id. A no-op if it is already gone, so concurrent erases are safe. */
+export const eraseStroke = (doc: Y.Doc, id: string): void => {
+  const strokes = getStrokes(doc);
+  const index = strokes.toArray().findIndex((s) => s.id === id);
+  if (index !== -1) strokes.delete(index, 1);
+};
+
+/** Undo: remove the author's most recent surviving stroke. Own strokes only. */
+export const undoLastStrokeBy = (doc: Y.Doc, authorId: string): void => {
+  const strokes = getStrokes(doc);
+  const list = strokes.toArray();
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]!.authorId === authorId) {
+      strokes.delete(i, 1);
+      return;
+    }
+  }
+};

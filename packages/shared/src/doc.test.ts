@@ -1,7 +1,17 @@
 import { expect, test } from 'vitest';
 import * as Y from 'yjs';
-import { DEFAULT_FILE } from './model.js';
-import { getFileText, getFilesMap, listFiles, seedDoc, setFileLanguage } from './doc.js';
+import { DEFAULT_FILE, type Stroke } from './model.js';
+import {
+  appendStroke,
+  eraseStroke,
+  getFileText,
+  getFilesMap,
+  getStrokes,
+  listFiles,
+  seedDoc,
+  setFileLanguage,
+  undoLastStrokeBy,
+} from './doc.js';
 
 test('seedDoc creates exactly one default file, with content', () => {
   const doc = new Y.Doc();
@@ -63,4 +73,79 @@ test('setFileLanguage ignores an unknown file', () => {
 
   expect(() => setFileLanguage(doc, 'nope', 'javascript')).not.toThrow();
   expect(listFiles(doc)).toHaveLength(1);
+});
+
+const stroke = (over: Partial<Stroke> = {}): Stroke => ({
+  id: 's1',
+  fileId: 'main',
+  authorId: 'u1',
+  color: '#f97316',
+  width: 3,
+  shape: { kind: 'freehand', points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+  createdAt: 0,
+  ...over,
+});
+
+test('appendStroke adds a stroke to the array', () => {
+  const doc = new Y.Doc();
+  appendStroke(doc, stroke());
+
+  expect(getStrokes(doc).toArray()).toEqual([stroke()]);
+});
+
+test('eraseStroke removes a stroke by id, and is a no-op for an id that is gone', () => {
+  const doc = new Y.Doc();
+  appendStroke(doc, stroke({ id: 's1' }));
+  appendStroke(doc, stroke({ id: 's2' }));
+
+  eraseStroke(doc, 's1');
+  expect(getStrokes(doc).toArray().map((s) => s.id)).toEqual(['s2']);
+
+  // Idempotent: erasing something already gone must not throw or delete a neighbour.
+  eraseStroke(doc, 's1');
+  expect(getStrokes(doc).toArray().map((s) => s.id)).toEqual(['s2']);
+});
+
+test("undoLastStrokeBy removes only the author's most recent stroke", () => {
+  const doc = new Y.Doc();
+  appendStroke(doc, stroke({ id: 's1', authorId: 'ada' }));
+  appendStroke(doc, stroke({ id: 's2', authorId: 'bob' }));
+  appendStroke(doc, stroke({ id: 's3', authorId: 'ada' }));
+
+  undoLastStrokeBy(doc, 'ada');
+
+  // s3 was Ada's most recent; s2 (Bob's) and s1 (Ada's older) survive.
+  expect(getStrokes(doc).toArray().map((s) => s.id)).toEqual(['s1', 's2']);
+});
+
+test('undoLastStrokeBy is a no-op when the author has no strokes', () => {
+  const doc = new Y.Doc();
+  appendStroke(doc, stroke({ id: 's1', authorId: 'bob' }));
+
+  expect(() => undoLastStrokeBy(doc, 'ada')).not.toThrow();
+  expect(getStrokes(doc).toArray().map((s) => s.id)).toEqual(['s1']);
+});
+
+test('strokes converge across two docs, and concurrent erases resolve', () => {
+  const a = new Y.Doc();
+  const b = new Y.Doc();
+  const sync = () => {
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)));
+  };
+
+  appendStroke(a, stroke({ id: 's1' }));
+  appendStroke(b, stroke({ id: 's2' }));
+  sync();
+
+  expect(getStrokes(a).toArray().map((s) => s.id).sort()).toEqual(['s1', 's2']);
+  expect(getStrokes(b).toArray().map((s) => s.id).sort()).toEqual(['s1', 's2']);
+
+  // Both erase s1 concurrently — the CRDT must not double-delete or throw.
+  eraseStroke(a, 's1');
+  eraseStroke(b, 's1');
+  sync();
+
+  expect(getStrokes(a).toArray().map((s) => s.id)).toEqual(['s2']);
+  expect(getStrokes(b).toArray().map((s) => s.id)).toEqual(['s2']);
 });

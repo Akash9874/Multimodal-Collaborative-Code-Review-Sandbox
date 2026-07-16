@@ -17,6 +17,7 @@
     "monaco-editor": "^0.52.2",
     "nanoid": "^5.0.9",
     "next": "^15.1.6",
+    "perfect-freehand": "^1.2.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "y-monaco": "^0.1.6",
