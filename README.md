@@ -3,7 +3,7 @@
 A zero-install web workspace where several people edit code together, draw architecture
 directly over that code, and run it — seeing the same output at the same moment.
 
-**Status:** Phase 3 of 5 complete — collaborative editing, shared execution, and a drawing overlay.
+**Status:** Phase 4a of 5 — collaborative editing, shared execution, a drawing overlay, and durable rooms.
 Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md)
 
 ## What works today
@@ -23,6 +23,8 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
 - Python, JavaScript and TypeScript. The language picker renames the file to match.
 - Your code runs in Piston's isolated, network-less container — never on our server.
 - Someone who joins late is replayed the runs they missed.
+- Close every tab and reopen the link later — the code and the drawings are still there. Each room's
+  whole document is persisted to Postgres and reloaded on the next visit.
 
 ## Architecture
 
@@ -42,6 +44,11 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
   space — so a stroke over line 12 is on line 12 for everyone, whatever their scroll. A hard Code/Draw
   `pointer-events` switch keeps the canvas and editor from fighting over the pointer. Strokes are
   ordinary Y.Doc state and sync through the same pure relay; the live in-progress pen rides on awareness.
+- **Rooms are durable.** The server stores each room's whole `Y.Doc` as one opaque `BYTEA` blob in
+  Postgres — encoded with `Y.encodeStateAsUpdate`, never parsed — loading it on the first connection,
+  debounce-saving on edit, flushing when the last client leaves, and evicting from memory after a grace
+  period. The `/sync` relay stays pure; persistence is a store behind the room lifecycle, swappable by
+  connection string. Tables live in a private `sandbox` schema, off Supabase's REST Data API.
 
 ## Running it
 
@@ -59,11 +66,18 @@ now returns 401 — so `PISTON_URL` defaults to a self-hosted Piston at `http://
 it. Editing and presence work without it; only the Run button needs it. Point `PISTON_URL` at any
 other Piston instance to swap it out — that env var is the only thing that moves.
 
+**On the database.** Persistence uses **Supabase Postgres**. Set `DATABASE_URL` to your Supabase
+session-pooler connection string and apply [`apps/ws-server/sql/001_persistence.sql`](apps/ws-server/sql/001_persistence.sql)
+once (Supabase SQL editor, or `pnpm --filter @sandbox/ws-server db:migrate`). Without `DATABASE_URL`
+the app still runs — editing and drawing work — but rooms are in-memory and do not survive a restart.
+Point it at a **development** database when running the tests: the TTL sweep the Postgres suite
+exercises is global, so it deletes any room older than its cutoff, not only the suite's own rows.
+
 ## Tests
 
 ```bash
-pnpm test         # 107 unit + integration tests (Vitest)
-pnpm test:e2e     # 13 browser tests (Playwright), incl. two browsers drawing over one document
+pnpm test         # 115 unit + integration tests (Vitest), + 4 Postgres tests that need DATABASE_URL
+pnpm test:e2e     # 14 browser tests (Playwright), incl. two browsers drawing over one document
 pnpm typecheck
 ```
 
@@ -71,11 +85,13 @@ The integration tests connect two genuine Yjs clients to the server and assert c
 under concurrent edits, and boot the exec server with a stub executor to prove one client's run
 reaches the other. The end-to-end tests drive two isolated browser contexts — not two tabs, which
 could sync through `BroadcastChannel` behind the server's back and pass falsely. The execution e2e
-tests call a real Piston, so `pnpm piston:up` must be running first.
+tests call a real Piston, so `pnpm piston:up` must be running first. The persistence tests that need
+a real database — the Postgres store suite and the reopen-tomorrow e2e — are gated on `DATABASE_URL`
+and skip without it, so a contributor without the secret is never blocked.
 
 ## Not built yet
 
-Postgres persistence and multi-file support (Phase 4), line-anchored annotations and deployment (Phase 5).
+Multi-file tabs (Phase 4b), line-anchored annotations and deployment (Phase 5).
 
 ## A note on access
 
