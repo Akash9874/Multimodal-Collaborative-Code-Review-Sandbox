@@ -8,18 +8,28 @@ import { TokenBuckets } from './exec/limiter';
 import { PistonExecutor } from './exec/piston';
 import { getOrCreateExecRoom } from './exec/rooms';
 import { MemoryRunStore, type RunStore } from './exec/runs';
+import { MemoryRoomStore, type RoomStore } from './persistence/store';
 import { setupSyncConnection } from './sync/connection';
-import { getOrCreateRoom, roomCount } from './sync/rooms';
+import { configureRooms, getOrCreateRoom, roomCount } from './sync/rooms';
 
 /** The injection seam the integration tests need: a stub executor, a fake clock, a fresh store. */
 export type SandboxServerOptions = {
   executor?: CodeExecutor;
   store?: RunStore;
+  roomStore?: RoomStore;
+  graceMs?: number;
+  saveDebounceMs?: number;
   now?: () => number;
 };
 
 export const createSandboxServer = (options: SandboxServerOptions = {}): Server => {
   const now = options.now ?? Date.now;
+
+  configureRooms({
+    store: options.roomStore ?? new MemoryRoomStore(),
+    graceMs: options.graceMs,
+    saveDebounceMs: options.saveDebounceMs,
+  });
 
   const deps: ExecDeps = {
     executor: options.executor ?? new PistonExecutor(env.pistonUrl),
@@ -53,10 +63,10 @@ export const createSandboxServer = (options: SandboxServerOptions = {}): Server 
 
     const ip = req.socket.remoteAddress ?? 'unknown';
 
-    wss.handleUpgrade(req, socket, head, (conn) => {
+    wss.handleUpgrade(req, socket, head, async (conn) => {
       // Two sockets, on purpose. /sync is a pure relay that never parses document semantics;
       // /exec is the single execution authority.
-      if (prefix === 'sync') setupSyncConnection(conn, getOrCreateRoom(roomId));
+      if (prefix === 'sync') setupSyncConnection(conn, await getOrCreateRoom(roomId));
       else setupExecConnection(conn, getOrCreateExecRoom(roomId), ip, deps);
     });
   });

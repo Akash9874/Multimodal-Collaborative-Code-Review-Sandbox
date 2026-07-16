@@ -15,6 +15,9 @@ export default defineConfig({
       url: 'http://localhost:1234/health',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+      // A room evicts seconds after the last tab closes, so the persistence spec does not
+      // have to wait out the 30s production grace. DATABASE_URL is inherited from the shell.
+      env: { ROOM_GRACE_MS: '2000' },
     },
     {
       command: 'pnpm --filter @sandbox/web dev',

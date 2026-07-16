@@ -7,11 +7,13 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate": "psql \"$DATABASE_URL\" -f sql/001_persistence.sql"
   },
   "dependencies": {
     "@sandbox/shared": "workspace:*",
     "lib0": "^0.2.99",
+    "pg": "^8.13.1",
     "ws": "^8.18.0",
     "y-protocols": "^1.0.6",
     "yjs": "^13.6.21",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
     "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
