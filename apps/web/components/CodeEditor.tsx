@@ -1,18 +1,27 @@
 'use client';
 
-import Editor from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
-import { useEffect, useState } from 'react';
-import { MonacoBinding } from 'y-monaco';
+import Editor, { useMonaco } from '@monaco-editor/react';
 import { DEFAULT_FILE, LANGUAGES, getFileText } from '@sandbox/shared';
+import type { editor } from 'monaco-editor';
+import { useEffect, useRef, useState } from 'react';
+import { MonacoBinding } from 'y-monaco';
+import { useExecContext } from '@/lib/exec/ExecContext';
 import { setupMonaco } from '@/lib/monaco/setup';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
+import { useFile } from '@/lib/yjs/useFile';
 
 setupMonaco();
 
 export function CodeEditor() {
   const { doc, awareness } = useRoomContext();
+  const { runActiveFile } = useExecContext();
+  const monaco = useMonaco();
+  const file = useFile(DEFAULT_FILE.id);
   const [instance, setInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
+
+  // addCommand's handler is registered once and would otherwise close over a stale runActiveFile.
+  const run = useRef(runActiveFile);
+  run.current = runActiveFile;
 
   useEffect(() => {
     const model = instance?.getModel();
@@ -28,6 +37,21 @@ export function CodeEditor() {
     );
     return () => binding.destroy();
   }, [instance, doc, awareness]);
+
+  // Monaco swallows keydown, so a document-level listener never fires while the editor has focus.
+  useEffect(() => {
+    if (!instance || !monaco) return;
+
+    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => run.current());
+  }, [instance, monaco]);
+
+  // The language picker is a Y.Doc write, so it arrives here for everyone, not just the picker.
+  useEffect(() => {
+    const model = instance?.getModel();
+    if (!monaco || !model || !file) return;
+
+    monaco.editor.setModelLanguage(model, LANGUAGES[file.language].monaco);
+  }, [instance, monaco, file]);
 
   return (
     <Editor
