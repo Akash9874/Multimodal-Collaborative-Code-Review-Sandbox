@@ -26,13 +26,26 @@ export function CodeEditor() {
   const run = useRef(runActiveFile);
   run.current = runActiveFile;
 
+  // We own the model, one per file, keyed by id — NOT <Editor>'s `path` prop.
+  //
+  // `path` would also give a model per file, but the library swaps the model inside its own
+  // effect, which races this one: ours runs first, binds the new file's Y.Text to the *old*
+  // model, and the model you are actually typing into ends up with no binding watching it. The
+  // text then never reaches the CRDT, and the next switch back seeds the model from an empty
+  // Y.Text and wipes what you wrote. Setting the model here makes the order ours to decide.
+  //
+  // The URI is the file id, not the name: Monaco keys models by URI, and duplicate names are
+  // tolerated by design — two files called utils.py must not share one model.
+  //
   // Exactly ONE binding is alive at a time — to the active file. y-monaco writes its selection
   // into awareness, so a binding per open file would mean several writers racing over one field,
-  // and remote cursors bleeding into files they are not in. Destroying on switch makes that
-  // impossible by construction rather than by a filter someone can forget.
+  // and remote cursors bleeding into files they are not in.
   useEffect(() => {
-    const model = instance?.getModel();
-    if (!instance || !model) return;
+    if (!instance || !monaco) return;
+
+    const uri = monaco.Uri.parse(`inmemory://sandbox/${activeFileId}`);
+    const model = monaco.editor.getModel(uri) ?? monaco.editor.createModel('', 'plaintext', uri);
+    instance.setModel(model);
 
     // MonacoBinding seeds the model from the Y.Text. Never pass `value`/`defaultValue` to
     // <Editor>: the binding would push that content back into the CRDT and duplicate it.
@@ -43,7 +56,7 @@ export function CodeEditor() {
       awareness,
     );
     return () => binding.destroy();
-  }, [instance, doc, awareness, activeFileId]);
+  }, [instance, monaco, doc, awareness, activeFileId]);
 
   // Tell the room which file you are looking at. CanvasOverlay filters remote pens on this.
   useEffect(() => {
@@ -57,24 +70,22 @@ export function CodeEditor() {
     instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => run.current());
   }, [instance, monaco]);
 
-  // A rename is a Y.Doc write, so it arrives here for everyone, not just the renamer.
+  // A rename is a Y.Doc write, so it arrives here for everyone, not just the renamer. This runs
+  // after the binding effect above, which is what sets the model — declaration order matters.
   useEffect(() => {
     const model = instance?.getModel();
     if (!monaco || !model || !file) return;
 
     const language = languageForName(file.name);
     monaco.editor.setModelLanguage(model, language ? LANGUAGES[language].monaco : 'plaintext');
-  }, [instance, monaco, file]);
+  }, [instance, monaco, file, activeFileId]);
 
   return (
     <div className="relative h-full">
+      {/* No `path` prop: the model is ours to set, in the binding effect above. */}
       <Editor
         height="100%"
         theme="vs-dark"
-        // The id, not the name: Monaco keys its models by path, and duplicate filenames are
-        // tolerated by design — two files called utils.py must not share one model.
-        path={activeFileId}
-        defaultLanguage="python"
         options={{
           minimap: { enabled: false },
           fontSize: 14,
