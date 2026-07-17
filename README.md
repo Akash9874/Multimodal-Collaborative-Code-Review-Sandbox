@@ -3,7 +3,8 @@
 A zero-install web workspace where several people edit code together, draw architecture
 directly over that code, and run it — seeing the same output at the same moment.
 
-**Status:** Phase 4a of 5 — collaborative editing, shared execution, a drawing overlay, and durable rooms.
+**Status:** Phase 4b of 5 — collaborative editing, shared execution, a drawing overlay, durable rooms,
+and multi-file tabs.
 Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md)
 
 ## What works today
@@ -20,11 +21,16 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
 - Anyone presses **Run** (or `Ctrl`/`Cmd`+`Enter`) and *everyone* sees the same stdout and stderr
   appear in the same terminal at the same moment — with stdin echoed, so the output makes sense to
   the people who did not type it.
-- Python, JavaScript and TypeScript. The language picker renames the file to match.
+- Several files per room. Add a tab, rename it, delete it — everyone's tab strip stays in step, and
+  each file keeps its own code *and* its own drawings.
+- The filename decides the language: rename `main.py` to `main.js` and it is JavaScript, for everyone.
+  Python, JavaScript and TypeScript; the picker is a shortcut for the same rename.
+- **Run executes the file you are looking at**, so `import utils` from `main.py` will not resolve — this
+  is a place to read code together and mark it up, not a build system.
 - Your code runs in Piston's isolated, network-less container — never on our server.
 - Someone who joins late is replayed the runs they missed.
-- Close every tab and reopen the link later — the code and the drawings are still there. Each room's
-  whole document is persisted to Postgres and reloaded on the next visit.
+- Close every tab and reopen the link later — the files, the code and the drawings are still there. Each
+  room's whole document is persisted to Postgres and reloaded on the next visit.
 
 ## Architecture
 
@@ -34,7 +40,16 @@ Design: [`Docs/superpowers/specs/2026-07-13-multimodal-sandbox-design.md`](Docs/
 - **`apps/ws-server`** — Node + `ws`, speaking the Yjs sync protocol directly via `y-protocols`.
   It holds and merges each room's document; it never inspects the contents. Rooms outlive their
   last connection by 30 seconds, so a refresh does not wipe your work.
-- **`packages/shared`** — the Y.Doc schema and every type that crosses the wire.
+- **`packages/shared`** — the Y.Doc schema and every type that crosses the wire. It compiles against
+  `ES2022` and nothing else — no DOM, no Node types — so it cannot reach for `document`, `process`, or
+  `crypto`. That is why ids are passed in rather than generated there.
+- **The doc has been multi-file since Phase 1**; Phase 4b is the UI arriving. The language is *derived*
+  from the filename rather than stored, so no second field can disagree with the extension Piston keys
+  off. Which tab you are on is client-local state — published to awareness so remote pens are filtered
+  per file, but never written to the doc, since one person's tab click must not move everyone's editor.
+- **The editor owns its Monaco models**, one per file id, rather than using `<Editor path>`. The library
+  swaps models in its own effect, which races the Yjs binding: the binding would attach to the previous
+  model and your typing would never reach the CRDT at all.
 - **Two sockets, on purpose.** `/sync/<roomId>` is a pure Yjs relay that never parses document
   semantics. `/exec/<roomId>` is the single execution authority: it validates at the boundary,
   rate-limits, calls Piston, and broadcasts the result to the room. Run requests deliberately do
@@ -92,8 +107,8 @@ own rows.
 
 ```bash
 pnpm db:up        # a local Postgres in Docker, migrated — needed by the persistence tests
-pnpm test         # 117 unit + integration tests (Vitest), + 4 Postgres tests that need DATABASE_URL
-pnpm test:e2e     # 14 browser tests (Playwright), incl. two browsers drawing over one document
+pnpm test         # 136 unit + integration tests (Vitest) with DATABASE_URL set; 132 + 4 skipped without
+pnpm test:e2e     # 22 browser tests (Playwright), incl. two browsers drawing over one document
 pnpm typecheck
 ```
 
@@ -105,9 +120,16 @@ tests call a real Piston, so `pnpm piston:up` must be running first. The persist
 a real database — the Postgres store suite and the reopen-tomorrow e2e — are gated on `DATABASE_URL`
 and skip without it, so a contributor without the secret is never blocked.
 
+**Run the gated tests before believing a persistence change works.** Phase 4a shipped a dropped-message
+race that turned every restored room's first visitor away with a blank editor, and the whole suite was
+green the entire time, because the tests that would have caught it were skipped for want of a database.
+`pnpm db:up` exists so that "I did not have Postgres" is not a reason. A skipped test has proved nothing.
+
 ## Not built yet
 
-Multi-file tabs (Phase 4b), line-anchored annotations and deployment (Phase 5).
+Line-anchored annotations and deployment (Phase 5). Running more than one file at a time: Piston takes a
+`files[]` array, so it is a coherent later slice — it needs an entry-point decision and a per-room size
+budget, neither of which multi-file *editing* requires.
 
 ## A note on access
 
