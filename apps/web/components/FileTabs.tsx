@@ -37,6 +37,7 @@ function NameInput({
       {error && (
         <p
           role="alert"
+          data-testid="file-name-error"
           className="absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded bg-red-950 px-2 py-1 text-xs text-red-300"
         >
           {error}
