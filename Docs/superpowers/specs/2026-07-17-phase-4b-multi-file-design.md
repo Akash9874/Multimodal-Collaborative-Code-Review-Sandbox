@@ -85,9 +85,15 @@ renameFile(doc, fileId, name): void
 deleteFile(doc, fileId): void
 ```
 
-`createFile` writes a `FileMeta` and leaves the text empty. Ids are generated client-side (the same
-`crypto.randomUUID` the stroke ids use) and are never derived from the name, so a rename is metadata-only
-and two concurrent creates cannot collide.
+`createFile` writes a `FileMeta` and leaves the text empty. Ids are never derived from the name, so a
+rename is metadata-only and two concurrent creates cannot collide.
+
+The id is **the caller's**, exactly as `appendStroke` takes a caller-built `Stroke`. This is forced, and the
+constraint is worth knowing: `packages/shared` compiles with `lib: ["ES2022"]` and no DOM or `@types/node`,
+so `crypto` does not exist to call there. That restraint is deliberate — `exec.ts` hand-rolls `byteLength`
+rather than reach for `TextEncoder` for the same reason, because a package that can reach for `crypto` can
+equally reach for `document` or `process`. The web app generates the id with `crypto.randomUUID`, where it
+is real.
 
 `renameFile` writes the name. Nothing else: the language follows from the name by derivation, with no
 second write to keep in step.
@@ -179,13 +185,20 @@ rename). The picker displays the active file's derived language, and is inert on
 This does not appear in the master spec's Phase 4 row, but it falls directly out of multi-file, and without
 it the feature is wrong.
 
-`DraftStroke` and `AwarenessState.pointer` already carry a `fileId`. With one file, nothing ever needed to
-read it. With tabs, an unfiltered draft means you watch a remote pen scribble across a file you are not
-looking at, at coordinates that mean nothing where they land.
+`DraftStroke` carries a `fileId`, and `CanvasOverlay` already reads it — but only ever compares it against
+`DEFAULT_FILE.id`, which with one file is a tautology. With tabs, an unfiltered draft means you watch a
+remote pen scribble across a file you are not looking at, at coordinates that mean nothing where they land.
+So the comparison becomes `activeFileId`.
 
-So: `CodeEditor` publishes `activeFileId` into awareness — the field has been in `AwarenessState` since
-Phase 1, unused — and `CanvasOverlay` renders only the remote drafts and pointers whose `fileId` matches
-the active file.
+`activeFileId` is **already published** to awareness — `RoomProvider` writes it at `RoomContext.tsx:30`,
+hardcoded to `DEFAULT_FILE.id`. It is not an unused field waiting to be filled in; it is an existing write
+that must start following the active file. It moves out of `RoomProvider` (which has no notion of an active
+file) to a component inside `ActiveFileProvider`.
+
+**`AwarenessState.pointer` is dead.** Nothing writes it — `setLocalStateField` is only ever called with
+`user`, `activeFileId`, and `draft` — so there is no remote pointer to filter, and this phase adds no
+filter for one. The field is left in place, untouched and still unwritten; removing it is unrelated
+cleanup, and adding a filter for a value that is always `undefined` would be theatre.
 
 Remote *text* cursors are filtered structurally rather than by a check, which §7 explains.
 
@@ -218,8 +231,9 @@ undo history across a tab switch is therefore not something this design promises
 | `apps/web/lib/yjs/useFiles.ts` | new — observes `files`, returns `FileMeta[]` (sorted, as `listFiles` already does) |
 | `apps/web/lib/files/ActiveFileContext.tsx` | new — `activeFileId` + setter, with the deleted-file fallback |
 | `apps/web/components/FileTabs.tsx` | new — the strip: switch, `+`, inline rename, `×` + confirm |
-| `apps/web/components/CodeEditor.tsx` | `activeFileId` for `useFile`/binding/`path`; publish `activeFileId` to awareness |
-| `apps/web/components/CanvasOverlay.tsx` | `useStrokes(activeFileId)`; new strokes carry it; filter remote drafts/pointers by `fileId` |
+| `apps/web/components/CodeEditor.tsx` | `activeFileId` for `useFile`/binding/`path`; publish `activeFileId` to awareness (moved from `RoomContext`) |
+| `apps/web/lib/yjs/RoomContext.tsx` | drop the hardcoded `activeFileId` write (`:30`); it keeps writing `user` |
+| `apps/web/components/CanvasOverlay.tsx` | `useStrokes(activeFileId)`; new strokes carry it; filter remote drafts by `fileId` |
 | `apps/web/components/RunBar.tsx`, `lib/exec/ExecContext.tsx` | run the active file; disable on `undefined` language |
 | `apps/web/components/Workspace.tsx` | mount `ActiveFileProvider` + `FileTabs` |
 
