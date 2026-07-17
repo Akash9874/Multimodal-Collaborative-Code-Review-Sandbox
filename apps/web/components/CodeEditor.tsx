@@ -1,7 +1,7 @@
 'use client';
 
 import Editor, { useMonaco } from '@monaco-editor/react';
-import { DEFAULT_FILE, LANGUAGES, getFileText } from '@sandbox/shared';
+import { DEFAULT_FILE, LANGUAGES, getFileText, languageForName } from '@sandbox/shared';
 import type { editor } from 'monaco-editor';
 import { useEffect, useRef, useState } from 'react';
 import { MonacoBinding } from 'y-monaco';
@@ -46,12 +46,13 @@ export function CodeEditor() {
     instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => run.current());
   }, [instance, monaco]);
 
-  // The language picker is a Y.Doc write, so it arrives here for everyone, not just the picker.
+  // A rename is a Y.Doc write, so it arrives here for everyone, not just the renamer.
   useEffect(() => {
     const model = instance?.getModel();
     if (!monaco || !model || !file) return;
 
-    monaco.editor.setModelLanguage(model, LANGUAGES[file.language].monaco);
+    const language = languageForName(file.name);
+    monaco.editor.setModelLanguage(model, language ? LANGUAGES[language].monaco : 'plaintext');
   }, [instance, monaco, file]);
 
   return (
@@ -60,7 +61,7 @@ export function CodeEditor() {
         height="100%"
         theme="vs-dark"
         path={DEFAULT_FILE.name}
-        defaultLanguage={LANGUAGES[DEFAULT_FILE.language].monaco}
+        defaultLanguage="python"
         options={{
           minimap: { enabled: false },
           fontSize: 14,

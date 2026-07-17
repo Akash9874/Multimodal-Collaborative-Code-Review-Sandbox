@@ -5,12 +5,9 @@ import {
   DOC_FILES_KEY,
   DOC_META_KEY,
   DOC_STROKES_KEY,
-  LANGUAGES,
   SCHEMA_VERSION,
   fileTextKey,
-  renameExtension,
   type FileMeta,
-  type LanguageId,
   type Stroke,
 } from './model.js';
 
@@ -37,24 +34,6 @@ export const seedDoc = (doc: Y.Doc): void => {
     getMeta(doc).set('createdAt', Date.now());
     getFilesMap(doc).set(DEFAULT_FILE.id, DEFAULT_FILE);
     getFileText(doc, DEFAULT_FILE.id).insert(0, DEFAULT_FILE_CONTENT);
-  });
-};
-
-/**
- * The language picker's one write. Name and language must not drift apart: Piston keys off the
- * filename's extension for JavaScript and TypeScript, so a `main.py` holding TypeScript will not
- * compile. Phase 4 maintains the same invariant from the other end — there, renaming drives the
- * language; here, the language drives the rename.
- */
-export const setFileLanguage = (doc: Y.Doc, fileId: string, language: LanguageId): void => {
-  const files = getFilesMap(doc);
-  const file = files.get(fileId);
-  if (!file || file.language === language) return;
-
-  files.set(fileId, {
-    ...file,
-    language,
-    name: renameExtension(file.name, LANGUAGES[language].extension),
   });
 };
 

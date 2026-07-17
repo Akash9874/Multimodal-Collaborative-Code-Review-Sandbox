@@ -69,10 +69,17 @@ export const validateFileName = (name: string, existingNames: string[]): string 
   return taken ? 'That name is already taken' : null;
 };
 
+/**
+ * There is deliberately no `language` field. The name is the single source of truth — see
+ * `languageForName`. A stored language would be a second thing that could disagree with the
+ * extension Piston actually keys off.
+ *
+ * Rooms persisted before this change still carry a `language` key inside their stored FileMeta.
+ * It is inert: we simply stop reading it, so no migration and no SCHEMA_VERSION bump.
+ */
 export type FileMeta = {
   id: string;
   name: string;
-  language: LanguageId;
   createdAt: number;
 };
 
@@ -125,7 +132,6 @@ export const fileTextKey = (fileId: string): string => `file:${fileId}`;
 export const DEFAULT_FILE: FileMeta = {
   id: 'main',
   name: 'main.py',
-  language: 'python',
   createdAt: 0, // deterministic: a timestamp here would differ per seeder
 };
 

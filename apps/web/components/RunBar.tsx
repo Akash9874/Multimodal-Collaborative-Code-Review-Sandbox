@@ -1,6 +1,14 @@
 'use client';
 
-import { DEFAULT_FILE, LANGUAGES, type LanguageId, MAX_STDIN_BYTES, setFileLanguage } from '@sandbox/shared';
+import {
+  DEFAULT_FILE,
+  LANGUAGES,
+  type LanguageId,
+  MAX_STDIN_BYTES,
+  languageForName,
+  renameExtension,
+  renameFile,
+} from '@sandbox/shared';
 import { useExecContext } from '@/lib/exec/ExecContext';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { useFile } from '@/lib/yjs/useFile';
@@ -10,25 +18,37 @@ export function RunBar() {
   const { runActiveFile, isRunning, status, stdin, setStdin } = useExecContext();
   const file = useFile(DEFAULT_FILE.id);
 
+  const language = file ? languageForName(file.name) : undefined;
   const offline = status !== 'connected';
-  const disabled = offline || isRunning || !file;
+  const disabled = offline || isRunning || !file || !language;
 
   const label = offline ? 'Offline' : isRunning ? 'Running…' : 'Run';
+  // A dead button with no reason is worse than no button. Say why it cannot run.
+  const title = file && !language ? `No runtime for ${file.name}` : 'Ctrl/Cmd + Enter';
 
   return (
     <div className="flex items-center gap-3 border-b border-neutral-800 px-4 py-2">
       <code className="text-sm text-neutral-400">{file?.name ?? '—'}</code>
 
+      {/* One write path: picking a language renames the file, and the language derives from that. */}
       <select
         aria-label="Language"
-        value={file?.language ?? 'python'}
+        value={language ?? ''}
         disabled={!file}
-        onChange={(event) => setFileLanguage(doc, DEFAULT_FILE.id, event.target.value as LanguageId)}
+        onChange={(event) =>
+          file &&
+          renameFile(
+            doc,
+            file.id,
+            renameExtension(file.name, LANGUAGES[event.target.value as LanguageId].extension),
+          )
+        }
         className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
       >
-        {Object.entries(LANGUAGES).map(([id, language]) => (
+        {!language && <option value="">—</option>}
+        {Object.entries(LANGUAGES).map(([id, lang]) => (
           <option key={id} value={id}>
-            {language.label}
+            {lang.label}
           </option>
         ))}
       </select>
@@ -46,7 +66,7 @@ export function RunBar() {
         data-testid="run"
         onClick={runActiveFile}
         disabled={disabled}
-        title="Ctrl/Cmd + Enter"
+        title={title}
         className="ml-auto rounded-md bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
       >
         ▶ {label}
