@@ -58,6 +58,60 @@ export const setFileLanguage = (doc: Y.Doc, fileId: string, language: LanguageId
   });
 };
 
+/**
+ * Ids are generated, never derived from the name: a rename is then metadata-only, and two
+ * concurrent creates cannot collide on an id.
+ *
+ * The id is the caller's, like `appendStroke`'s. This package's `lib` is `ES2022` and nothing
+ * else — no DOM, no @types/node — so `crypto` does not exist here to call. That restraint is
+ * deliberate and load-bearing (see `byteLength` in exec.ts): a package that could reach for
+ * `crypto` could equally reach for `document` or `process`. The web app generates the id, where
+ * `crypto.randomUUID` is real; tests pass a literal, which makes them deterministic for free.
+ */
+export const createFile = (doc: Y.Doc, name: string, id: string): string => {
+  doc.transact(() => {
+    getFilesMap(doc).set(id, { id, name, createdAt: Date.now() });
+    getFileText(doc, id); // bring the text type into existence, empty
+  });
+
+  return id;
+};
+
+/** The only write. The language follows from the name by derivation — there is nothing else to set. */
+export const renameFile = (doc: Y.Doc, fileId: string, name: string): void => {
+  const files = getFilesMap(doc);
+  const file = files.get(fileId);
+  if (!file) return;
+
+  files.set(fileId, { ...file, name });
+};
+
+/**
+ * Cascades in one transaction: the metadata, the text, and every stroke on this file.
+ *
+ * A Yjs root type cannot be removed from a document — there is no `doc.delete(key)` — so the text
+ * can only be emptied. The empty `file:<id>` type stays and is re-encoded into every future
+ * persisted blob. That leak is accepted: a room is disposable and swept after 30 days.
+ */
+export const deleteFile = (doc: Y.Doc, fileId: string): void => {
+  const files = getFilesMap(doc);
+  if (!files.has(fileId)) return;
+
+  doc.transact(() => {
+    files.delete(fileId);
+
+    const text = getFileText(doc, fileId);
+    text.delete(0, text.length);
+
+    const strokes = getStrokes(doc);
+    const list = strokes.toArray();
+    // Back to front: deleting shifts the index of everything after it.
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i]!.fileId === fileId) strokes.delete(i, 1);
+    }
+  });
+};
+
 /** Commit a finished stroke. Called on pointer-up; the draft in awareness is cleared separately. */
 export const appendStroke = (doc: Y.Doc, stroke: Stroke): void => {
   getStrokes(doc).push([stroke]);

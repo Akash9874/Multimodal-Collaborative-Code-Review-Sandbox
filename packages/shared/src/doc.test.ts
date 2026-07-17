@@ -3,11 +3,14 @@ import * as Y from 'yjs';
 import { DEFAULT_FILE, type Stroke } from './model.js';
 import {
   appendStroke,
+  createFile,
+  deleteFile,
   eraseStroke,
   getFileText,
   getFilesMap,
   getStrokes,
   listFiles,
+  renameFile,
   seedDoc,
   setFileLanguage,
   undoLastStrokeBy,
@@ -148,4 +151,61 @@ test('strokes converge across two docs, and concurrent erases resolve', () => {
 
   expect(getStrokes(a).toArray().map((s) => s.id)).toEqual(['s2']);
   expect(getStrokes(b).toArray().map((s) => s.id)).toEqual(['s2']);
+});
+
+test('createFile adds an empty file and returns its id', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+
+  const id = createFile(doc, 'utils.py', 'f2');
+
+  expect(id).toBe('f2');
+  expect(listFiles(doc).map((f) => f.name)).toEqual(['main.py', 'utils.py']);
+  expect(getFileText(doc, 'f2').toString()).toBe('');
+});
+
+test('renameFile changes only the name — the id and the text are untouched', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+  const id = createFile(doc, 'utils.py', 'f2');
+  getFileText(doc, id).insert(0, 'x = 1');
+
+  renameFile(doc, id, 'helpers.js');
+
+  expect(getFilesMap(doc).get(id)?.name).toBe('helpers.js');
+  expect(getFilesMap(doc).get(id)?.id).toBe('f2');
+  expect(getFileText(doc, id).toString()).toBe('x = 1');
+});
+
+test('renameFile ignores an unknown file', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+
+  expect(() => renameFile(doc, 'nope', 'ghost.py')).not.toThrow();
+  expect(listFiles(doc)).toHaveLength(1);
+});
+
+test('deleteFile removes the file, empties its text, and takes only its strokes', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+  const id = createFile(doc, 'utils.py', 'f2');
+  getFileText(doc, id).insert(0, 'doomed');
+
+  appendStroke(doc, stroke({ id: 's-main', fileId: DEFAULT_FILE.id }));
+  appendStroke(doc, stroke({ id: 's-utils', fileId: 'f2' }));
+
+  deleteFile(doc, id);
+
+  expect(listFiles(doc).map((f) => f.id)).toEqual([DEFAULT_FILE.id]);
+  expect(getFileText(doc, id).toString()).toBe('');
+  // The cascade is exact: main.py's stroke survives.
+  expect(getStrokes(doc).toArray().map((s) => s.id)).toEqual(['s-main']);
+});
+
+test('deleteFile is a no-op on an unknown id, so concurrent deletes are safe', () => {
+  const doc = new Y.Doc();
+  seedDoc(doc);
+
+  expect(() => deleteFile(doc, 'ghost')).not.toThrow();
+  expect(listFiles(doc)).toHaveLength(1);
 });
