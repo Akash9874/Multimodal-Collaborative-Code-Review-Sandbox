@@ -9,7 +9,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { DEFAULT_FILE, type User, getFileText, getFilesMap } from '@sandbox/shared';
+import { type User, getFileText, getFilesMap, languageForName } from '@sandbox/shared';
+import { useActiveFile } from '@/lib/files/ActiveFileContext';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { type ExecSocket, type ExecStatus, acquireExec, releaseExec } from './socket';
 import { EMPTY_EXEC_STATE, type ExecState, applyExecMessage } from './state';
@@ -32,6 +33,7 @@ export const useExecContext = (): ExecContextValue => {
 
 export function ExecProvider({ roomId, user, children }: { roomId: string; user: User; children: ReactNode }) {
   const { doc } = useRoomContext();
+  const { activeFileId } = useActiveFile();
   const [state, setState] = useState<ExecState>(EMPTY_EXEC_STATE);
   const [status, setStatus] = useState<ExecStatus>('connecting');
   const [stdin, setStdin] = useState('');
@@ -55,19 +57,24 @@ export function ExecProvider({ roomId, user, children }: { roomId: string; user:
   }, [roomId]);
 
   const runActiveFile = useCallback(() => {
-    const file = getFilesMap(doc).get(DEFAULT_FILE.id);
+    const file = getFilesMap(doc).get(activeFileId);
     if (!file) return;
+
+    // No runtime for this extension. The button is disabled too — this is the same guard one
+    // layer down, so the keyboard shortcut cannot route around it.
+    const language = languageForName(file.name);
+    if (!language) return;
 
     // The snapshot the presser currently sees. The server never reads the CRDT.
     socket.current?.send({
       type: 'run',
       byUser: user,
       fileName: file.name,
-      language: file.language,
-      code: getFileText(doc, DEFAULT_FILE.id).toString(),
+      language,
+      code: getFileText(doc, activeFileId).toString(),
       stdin,
     });
-  }, [doc, stdin, user]);
+  }, [doc, activeFileId, stdin, user]);
 
   const isRunning = state.runs.some((run) => run.exitCode === null && !run.error);
 

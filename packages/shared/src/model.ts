@@ -28,10 +28,58 @@ export const LANGUAGES = {
 
 export type LanguageId = keyof typeof LANGUAGES;
 
+/** Derived from LANGUAGES so the two can never disagree. */
+export const EXTENSION_TO_LANGUAGE: Record<string, LanguageId> = Object.fromEntries(
+  Object.entries(LANGUAGES).map(([id, { extension }]) => [extension, id as LanguageId]),
+);
+
+/**
+ * The filename is the single source of truth for the language: Piston keys off the extension,
+ * so a `main.py` holding TypeScript will not compile. `undefined` is not an error — the file
+ * edits, syncs and is drawn on like any other; it simply has no runtime, and Run is disabled.
+ *
+ * `dot > 0`, not `>= 0`, matches renameExtension: `.py` is a dotfile whose stem is `.py`, not a
+ * Python file with an empty name.
+ */
+export const languageForName = (name: string): LanguageId | undefined => {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return undefined;
+
+  return EXTENSION_TO_LANGUAGE[name.slice(dot).toLowerCase()];
+};
+
+export const MAX_FILE_NAME_LENGTH = 32;
+
+/**
+ * Guards the create/rename UI. Returns an error message, or null when the name is usable.
+ *
+ * Uniqueness here is a UI guard and cannot be a doc invariant: two peers renaming concurrently
+ * both see a free name, and both writes land. That duplicate is tolerated — files are keyed by
+ * id, so it is cosmetic — and never auto-resolved, which would be a write-back race.
+ */
+export const validateFileName = (name: string, existingNames: string[]): string | null => {
+  const trimmed = name.trim();
+
+  if (!trimmed) return 'Name cannot be empty';
+  if (trimmed.length > MAX_FILE_NAME_LENGTH) return `Name is too long (max ${MAX_FILE_NAME_LENGTH})`;
+  if (trimmed.includes('/') || trimmed.includes('..')) return 'Name cannot contain / or ..';
+  if (trimmed.includes('\\')) return 'Name cannot contain \\';
+
+  const taken = existingNames.some((existing) => existing.toLowerCase() === trimmed.toLowerCase());
+  return taken ? 'That name is already taken' : null;
+};
+
+/**
+ * There is deliberately no `language` field. The name is the single source of truth — see
+ * `languageForName`. A stored language would be a second thing that could disagree with the
+ * extension Piston actually keys off.
+ *
+ * Rooms persisted before this change still carry a `language` key inside their stored FileMeta.
+ * It is inert: we simply stop reading it, so no migration and no SCHEMA_VERSION bump.
+ */
 export type FileMeta = {
   id: string;
   name: string;
-  language: LanguageId;
   createdAt: number;
 };
 
@@ -84,7 +132,6 @@ export const fileTextKey = (fileId: string): string => `file:${fileId}`;
 export const DEFAULT_FILE: FileMeta = {
   id: 'main',
   name: 'main.py',
-  language: 'python',
   createdAt: 0, // deterministic: a timestamp here would differ per seeder
 };
 

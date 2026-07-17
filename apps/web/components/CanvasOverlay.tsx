@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  DEFAULT_FILE,
   type DraftStroke,
   STROKE_WIDTH,
   type Shape,
@@ -12,6 +11,7 @@ import {
 import type { editor } from 'monaco-editor';
 import { useEffect, useRef, useState } from 'react';
 import { useCanvas } from '@/lib/canvas/CanvasContext';
+import { useActiveFile } from '@/lib/files/ActiveFileContext';
 import { type DrawTool, buildShape } from '@/lib/canvas/draft';
 import { freehandPath } from '@/lib/canvas/freehand';
 import { hits } from '@/lib/canvas/hitTest';
@@ -68,7 +68,8 @@ function ShapeView({ shape, color, opacity = 1 }: { shape: Shape; color: string;
 export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEditor }) {
   const { doc, awareness } = useRoomContext();
   const { mode, tool, user } = useCanvas();
-  const strokes = useStrokes(DEFAULT_FILE.id);
+  const { activeFileId } = useActiveFile();
+  const strokes = useStrokes(activeFileId);
 
   const [scroll, setScroll] = useState({ left: instance.getScrollLeft(), top: instance.getScrollTop() });
   const [drafts, setDrafts] = useState<DraftStroke[]>([]); // remote, from awareness
@@ -94,19 +95,21 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
   }, [instance, mode]);
 
   // Collect every peer's in-progress draft from awareness (mine is rendered from localDraft).
+  // Filtered by file: an unfiltered draft would scribble a remote pen across a file you are not
+  // looking at, at coordinates that mean nothing where they land.
   useEffect(() => {
     const read = () => {
       const mine = awareness.clientID;
       const next: DraftStroke[] = [];
       awareness.getStates().forEach((state, clientId) => {
-        if (clientId !== mine && state?.draft?.fileId === DEFAULT_FILE.id) next.push(state.draft);
+        if (clientId !== mine && state?.draft?.fileId === activeFileId) next.push(state.draft);
       });
       setDrafts(next);
     };
     read();
     awareness.on('change', read);
     return () => awareness.off('change', read);
-  }, [awareness]);
+  }, [awareness, activeFileId]);
 
   const pointFromEvent = (event: React.PointerEvent) => {
     const rect = svg.current!.getBoundingClientRect();
@@ -121,7 +124,7 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
     if (now - lastBroadcast.current < DRAFT_THROTTLE_MS) return;
     lastBroadcast.current = now;
     awareness.setLocalStateField('draft', {
-      fileId: DEFAULT_FILE.id,
+      fileId: activeFileId,
       color: user.color,
       width: STROKE_WIDTH,
       shape,
@@ -184,7 +187,7 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
     if (shape) {
       appendStroke(doc, {
         id: crypto.randomUUID(),
-        fileId: DEFAULT_FILE.id,
+        fileId: activeFileId,
         authorId: user.id,
         color: user.color,
         width: STROKE_WIDTH,
@@ -200,7 +203,7 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
     if (textAt && text) {
       appendStroke(doc, {
         id: crypto.randomUUID(),
-        fileId: DEFAULT_FILE.id,
+        fileId: activeFileId,
         authorId: user.id,
         color: user.color,
         width: STROKE_WIDTH,
