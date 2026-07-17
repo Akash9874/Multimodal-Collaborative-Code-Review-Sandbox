@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  DEFAULT_FILE,
   LANGUAGES,
   type LanguageId,
   MAX_STDIN_BYTES,
@@ -10,13 +9,15 @@ import {
   renameFile,
 } from '@sandbox/shared';
 import { useExecContext } from '@/lib/exec/ExecContext';
+import { useActiveFile } from '@/lib/files/ActiveFileContext';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { useFile } from '@/lib/yjs/useFile';
 
 export function RunBar() {
   const { doc } = useRoomContext();
   const { runActiveFile, isRunning, status, stdin, setStdin } = useExecContext();
-  const file = useFile(DEFAULT_FILE.id);
+  const { activeFileId } = useActiveFile();
+  const file = useFile(activeFileId);
 
   const language = file ? languageForName(file.name) : undefined;
   const offline = status !== 'connected';

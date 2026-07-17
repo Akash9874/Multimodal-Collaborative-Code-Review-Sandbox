@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, createContext, useContext, useEffect } from 'react';
-import { DEFAULT_FILE, type User } from '@sandbox/shared';
+import type { User } from '@sandbox/shared';
 import type { RoomHandle } from './room';
 import { type ConnectionStatus, useRoom } from './useRoom';
 
@@ -24,10 +24,10 @@ export function RoomProvider({
 }) {
   const { handle, status } = useRoom(roomId);
 
+  // activeFileId is published by CodeEditor, which is inside ActiveFileProvider and knows it.
   useEffect(() => {
     if (!handle) return;
     handle.awareness.setLocalStateField('user', user);
-    handle.awareness.setLocalStateField('activeFileId', DEFAULT_FILE.id);
   }, [handle, user]);
 
   if (!handle) return null;
