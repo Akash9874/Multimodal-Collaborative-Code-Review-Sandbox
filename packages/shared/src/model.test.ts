@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_NAME_LENGTH, isValidRoomId, renameExtension, sanitizeName } from './model.js';
+import {
+  MAX_FILE_NAME_LENGTH,
+  MAX_NAME_LENGTH,
+  isValidRoomId,
+  languageForName,
+  renameExtension,
+  sanitizeName,
+  validateFileName,
+} from './model.js';
 
 describe('isValidRoomId', () => {
   test('accepts a nanoid-shaped id', () => {
@@ -41,5 +49,51 @@ describe('renameExtension', () => {
 
   test('leaves a dotfile its leading dot', () => {
     expect(renameExtension('.env', '.py')).toBe('.env.py');
+  });
+});
+
+describe('languageForName', () => {
+  test('derives the language from the extension', () => {
+    expect(languageForName('main.py')).toBe('python');
+    expect(languageForName('main.js')).toBe('javascript');
+    expect(languageForName('main.ts')).toBe('typescript');
+  });
+
+  test('is case-insensitive, and only the last dot counts', () => {
+    expect(languageForName('MAIN.PY')).toBe('python');
+    expect(languageForName('a.b.py')).toBe('python');
+  });
+
+  test('returns undefined when there is no runtime for the file', () => {
+    // Not an error state: the file still edits, syncs, and is drawn on. Only Run is disabled.
+    expect(languageForName('notes.txt')).toBeUndefined();
+    expect(languageForName('Makefile')).toBeUndefined();
+    // A dotfile named .py, not a Python file with an empty name — same rule as renameExtension.
+    expect(languageForName('.py')).toBeUndefined();
+  });
+});
+
+describe('validateFileName', () => {
+  test('accepts a plain, free name', () => {
+    expect(validateFileName('utils.py', ['main.py'])).toBeNull();
+  });
+
+  test('rejects empty and oversized names', () => {
+    expect(validateFileName('', [])).toMatch(/empty/i);
+    expect(validateFileName('   ', [])).toMatch(/empty/i);
+    expect(validateFileName(`${'a'.repeat(MAX_FILE_NAME_LENGTH)}.py`, [])).toMatch(/too long/i);
+  });
+
+  test('rejects path-ish names — the namespace is flat', () => {
+    // A slash would be a lie about what Piston does with the name.
+    expect(validateFileName('src/utils.py', [])).toMatch(/\//);
+    expect(validateFileName('src\\utils.py', [])).toMatch(/\\/);
+    expect(validateFileName('../secrets.py', [])).toMatch(/\//);
+  });
+
+  test('rejects a name already taken, case-insensitively', () => {
+    expect(validateFileName('main.py', ['main.py'])).toMatch(/already/i);
+    // Two tabs reading main.py and MAIN.PY is the same confusion.
+    expect(validateFileName('MAIN.PY', ['main.py'])).toMatch(/already/i);
   });
 });
