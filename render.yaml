@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: crdt-sandbox-ws
+    runtime: node
+    plan: free
+    # --prod=false is load-bearing: Render sets NODE_ENV=production, which makes pnpm skip
+    # devDependencies — and the start command runs through tsx, which lives there.
+    buildCommand: pnpm install --frozen-lockfile --prod=false && pnpm --filter @sandbox/shared build
+    startCommand: pnpm --filter @sandbox/ws-server start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # The hosted demo has no executor. See the Phase 5 design section 6.5.
+      - key: EXECUTION_ENABLED
+        value: "false"
+      - key: ROOM_GRACE_MS
+        value: "30000"
+      - key: ROOM_TTL_DAYS
+        value: "30"
+      # Set in the dashboard, never in this file.
+      - key: DATABASE_URL
+        sync: false

@@ -14,18 +14,24 @@ import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { useFile } from '@/lib/yjs/useFile';
 
 export function RunBar() {
-  const { doc } = useRoomContext();
-  const { runActiveFile, isRunning, status, stdin, setStdin } = useExecContext();
+  const { doc, isOffline } = useRoomContext();
+  const { runActiveFile, isRunning, status, stdin, setStdin, executionEnabled } = useExecContext();
   const { activeFileId } = useActiveFile();
   const file = useFile(activeFileId);
 
   const language = file ? languageForName(file.name) : undefined;
-  const offline = status !== 'connected';
-  const disabled = offline || isRunning || !file || !language;
+  // A pill claiming offline while Run still works would undercut the thing being demonstrated.
+  const offline = status !== 'connected' || isOffline;
+  const disabled = offline || isRunning || !file || !language || !executionEnabled;
 
   const label = offline ? 'Offline' : isRunning ? 'Running…' : 'Run';
-  // A dead button with no reason is worse than no button. Say why it cannot run.
-  const title = file && !language ? `No runtime for ${file.name}` : 'Ctrl/Cmd + Enter';
+  // A dead button with no reason is worse than no button. Say why it cannot run. The hosted demo
+  // has no executor at all, which is a different reason from "this file has no runtime".
+  const title = !executionEnabled
+    ? 'Execution is local-only — run pnpm piston:up'
+    : file && !language
+      ? `No runtime for ${file.name}`
+      : 'Ctrl/Cmd + Enter';
 
   return (
     <div className="flex items-center gap-3 border-b border-neutral-800 px-4 py-2">

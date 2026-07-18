@@ -23,9 +23,14 @@ const RUN = {
   stdin: '',
 };
 
-const boot = async (executor: StubExecutor = new StubExecutor(OK)) => {
+const boot = async (executor: StubExecutor = new StubExecutor(OK), executionEnabled = true) => {
   clock = 0;
-  server = createSandboxServer({ executor, store: new MemoryRunStore(), now: () => clock });
+  server = createSandboxServer({
+    executor,
+    store: new MemoryRunStore(),
+    now: () => clock,
+    executionEnabled,
+  });
   await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
   execUrl = `ws://127.0.0.1:${(server.address() as AddressInfo).port}/exec`;
   return executor;
@@ -64,12 +69,22 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 5_000) => {
 
 const typesOf = (messages: ExecMessage[]) => messages.map((message) => message.type);
 
-test('a fresh room is sent an empty history, so the terminal knows it has loaded', async () => {
+test('a fresh room is greeted, then sent an empty history so the terminal knows it has loaded', async () => {
   await boot();
   const ada = await connect('room-exec-a');
+  await waitFor(() => ada.received.length > 1);
+
+  // The greeting comes first: the client renders the Run button from it.
+  expect(ada.received[0]).toEqual({ type: 'exec:hello', executionEnabled: true });
+  expect(ada.received[1]).toEqual({ type: 'run:history', runs: [] });
+});
+
+test('a server with no executor says so on connect', async () => {
+  await boot(new StubExecutor(OK), false);
+  const ada = await connect('room-exec-off');
   await waitFor(() => ada.received.length > 0);
 
-  expect(ada.received[0]).toEqual({ type: 'run:history', runs: [] });
+  expect(ada.received[0]).toEqual({ type: 'exec:hello', executionEnabled: false });
 });
 
 test('one person runs, and BOTH people see the output', async () => {
@@ -83,8 +98,20 @@ test('one person runs, and BOTH people see the output', async () => {
   // This is the phase. Bob pressed nothing, and Bob sees the output.
   await waitFor(() => typesOf(bob.received).includes('run:done'));
 
-  expect(typesOf(ada.received)).toEqual(['run:history', 'run:started', 'run:output', 'run:done']);
-  expect(typesOf(bob.received)).toEqual(['run:history', 'run:started', 'run:output', 'run:done']);
+  expect(typesOf(ada.received)).toEqual([
+    'exec:hello',
+    'run:history',
+    'run:started',
+    'run:output',
+    'run:done',
+  ]);
+  expect(typesOf(bob.received)).toEqual([
+    'exec:hello',
+    'run:history',
+    'run:started',
+    'run:output',
+    'run:done',
+  ]);
 
   const output = bob.received.find((message) => message.type === 'run:output');
   expect(output).toMatchObject({ stream: 'stdout', chunk: '42\n' });
@@ -116,9 +143,9 @@ test('someone who joins late is replayed the runs they missed', async () => {
   await waitFor(() => typesOf(ada.received).includes('run:done'));
 
   const carol = await connect('room-exec-d');
-  await waitFor(() => carol.received.length > 0);
+  await waitFor(() => carol.received.length > 1);
 
-  const history = carol.received[0];
+  const history = carol.received[1]; // [0] is exec:hello
   expect(history?.type).toBe('run:history');
   expect(history).toMatchObject({
     runs: [{ fileName: 'main.py', stdout: '42\n', exitCode: 0 }],

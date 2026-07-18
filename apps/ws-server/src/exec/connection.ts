@@ -13,6 +13,8 @@ export type ExecDeps = {
   roomLimiter: TokenBuckets;
   ipLimiter: TokenBuckets;
   now: () => number;
+  /** Advertised on connect. See env.ts for why this is explicit rather than derived. */
+  executionEnabled: boolean;
 };
 
 export const setupExecConnection = (
@@ -22,6 +24,9 @@ export const setupExecConnection = (
   deps: ExecDeps,
 ): void => {
   room.add(conn);
+
+  // First, always: the client renders the Run button from this.
+  send(conn, encode({ type: 'exec:hello', executionEnabled: deps.executionEnabled }));
 
   // Always sent, even when empty: the terminal must be able to tell "nothing has run here" from
   // "still loading".

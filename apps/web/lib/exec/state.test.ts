@@ -108,3 +108,20 @@ test('runs stay ordered by start time', () => {
 
   expect(state.runs.map((run) => run.id)).toEqual(['r1', 'r2']);
 });
+
+test('execution is assumed available until the server says otherwise', () => {
+  // Optimistic by default: a client that never hears exec:hello should not disable Run on a guess.
+  expect(EMPTY_EXEC_STATE.executionEnabled).toBe(true);
+});
+
+test('exec:hello carries whether the server can execute', () => {
+  expect(reduce([{ type: 'exec:hello', executionEnabled: false }]).executionEnabled).toBe(false);
+  expect(reduce([{ type: 'exec:hello', executionEnabled: true }]).executionEnabled).toBe(true);
+});
+
+test('exec:hello leaves the run history alone', () => {
+  const state = reduce([started('r1'), { type: 'exec:hello', executionEnabled: false }]);
+
+  expect(state.runs.map((run) => run.id)).toEqual(['r1']);
+  expect(state.executionEnabled).toBe(false);
+});

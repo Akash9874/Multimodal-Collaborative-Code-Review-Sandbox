@@ -35,7 +35,10 @@ const renderRun = (run: RunRecord): string => {
 export const renderRuns = (runs: RunRecord[], notice: string | null): string => {
   const blocks = runs.map(renderRun);
   if (notice) blocks.push(`${RED}✗ ${notice}${RESET}`);
-  if (blocks.length === 0) return '';
+
+  // An empty console that says nothing cannot be told from one that is still loading. run:history
+  // is always sent precisely so this state is knowable.
+  if (blocks.length === 0) return `${DIM}No runs yet — press Ctrl/Cmd + Enter${RESET}\r\n`;
 
   return `${blocks.join('\r\n\r\n')}\r\n`;
 };
