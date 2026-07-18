@@ -11,6 +11,7 @@ import { JoinGate } from './JoinGate';
 import { PresenceBar } from './PresenceBar';
 import { RemoteCursorStyles } from './RemoteCursorStyles';
 import { RunBar } from './RunBar';
+import { Shortcuts } from './Shortcuts';
 import { Toolbar } from './Toolbar';
 
 // Monaco and xterm both touch `window` at module scope and cannot be server-rendered.
@@ -38,6 +39,7 @@ export function Workspace({ roomId }: { roomId: string }) {
                 <CanvasProvider user={user}>
                   <div className="flex h-full flex-col">
                     <RemoteCursorStyles />
+                    <Shortcuts />
 
                     <header className="flex items-center gap-3 border-b border-neutral-800 px-4 py-2">
                       <span className="font-semibold">Sandbox</span>
