@@ -16,3 +16,6 @@ test-results/
 
 # TypeScript incremental build cache — a build artifact, like dist/
 *.tsbuildinfo
+
+# Visual brainstorming sessions (superpowers companion)
+.superpowers/
