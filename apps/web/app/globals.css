@@ -102,9 +102,14 @@ body {
   pointer-events: none;
 }
 
-/* Remote cursors in the hero scene. --c is set per cursor. */
+/* Remote cursors in the hero scene. --c is set per cursor. Anchored to the
+   window's top-left corner so the path keyframes are absolute coordinates —
+   without left/top the static position sits below the code, and every
+   translate lands outside the window's overflow clip. */
 .rc {
   position: absolute;
+  left: 0;
+  top: 0;
   z-index: 3;
   pointer-events: none;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
