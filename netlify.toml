@@ -1,0 +1,11 @@
+[build]
+  command = "pnpm --filter @sandbox/shared build && pnpm --filter @sandbox/web build"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Netlify defaults to npm; this repo is pnpm-only.
+  NETLIFY_USE_PNPM = "true"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
