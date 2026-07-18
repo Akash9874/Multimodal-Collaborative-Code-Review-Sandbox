@@ -363,7 +363,8 @@ apps/web/
   components/RunBar.tsx          MOD  offline predicate, executionEnabled message
   lib/exec/ExecContext.tsx       MOD  receive executionEnabled
   components/Shortcuts.tsx       NEW  cheatsheet overlay + document-level key handling
-  components/Terminal.tsx        MOD  empty state
+  components/Workspace.tsx       MOD  mount <Shortcuts />
+  lib/exec/render.ts             MOD  empty-terminal hint — Terminal is an xterm canvas, not JSX
 
 apps/ws-server/src/
   env.ts                         MOD  EXECUTION_ENABLED, default true
