@@ -1,21 +1,26 @@
 'use client';
 
 import {
+  type Anchor,
   type DraftStroke,
   STROKE_WIDTH,
   type Shape,
   type Stroke,
   appendStroke,
+  createAnchor,
   eraseStroke,
+  getFileText,
+  resolveAnchor,
 } from '@sandbox/shared';
 import type { editor } from 'monaco-editor';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCanvas } from '@/lib/canvas/CanvasContext';
 import { useActiveFile } from '@/lib/files/ActiveFileContext';
 import { type DrawTool, buildShape } from '@/lib/canvas/draft';
 import { freehandPath } from '@/lib/canvas/freehand';
 import { hits } from '@/lib/canvas/hitTest';
 import { toContentPoint } from '@/lib/canvas/coords';
+import { lineAtContentY, topmostPoint } from '@/lib/canvas/anchorLine';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { useStrokes } from '@/lib/yjs/useStrokes';
 
@@ -89,6 +94,17 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
     return () => sub.dispose();
   }, [instance]);
 
+  // An anchored stroke's position depends on the text, so a remote edit must repaint the overlay.
+  // CodeEditor swaps the model when the active file changes, so this resubscribes on activeFileId.
+  const [contentVersion, setContentVersion] = useState(0);
+  useEffect(() => {
+    const model = instance.getModel();
+    if (!model) return;
+
+    const sub = model.onDidChangeContent(() => setContentVersion((version) => version + 1));
+    return () => sub.dispose();
+  }, [instance, activeFileId]);
+
   // Draw mode makes the editor read-only, so a stray keystroke cannot edit code while you draw.
   useEffect(() => {
     instance.updateOptions({ readOnly: mode === 'draw' });
@@ -135,6 +151,26 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
     drawing.current = null;
     setLocalDraft(null);
     awareness.setLocalStateField('draft', undefined);
+  };
+
+  /**
+   * The anchor binds the shape's topmost point to the first character of the line it sits on.
+   * `undefined` when there is no model yet — a stroke with no anchor renders where it was drawn,
+   * which is strictly better than one anchored to a guess.
+   */
+  const anchorFor = (shape: Shape): Anchor | undefined => {
+    const model = instance.getModel();
+    if (!model) return undefined;
+
+    const top = topmostPoint(shape);
+    const line = lineAtContentY(top.y, model.getLineCount(), (l) => instance.getTopForLineNumber(l));
+    const index = model.getOffsetAt({ lineNumber: line, column: 1 });
+
+    return createAnchor(
+      getFileText(doc, activeFileId),
+      index,
+      top.y - instance.getTopForLineNumber(line),
+    );
   };
 
   const onPointerDown = (event: React.PointerEvent) => {
@@ -192,6 +228,7 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
         color: user.color,
         width: STROKE_WIDTH,
         shape,
+        anchor: anchorFor(shape),
         createdAt: Date.now(),
       });
     }
@@ -201,19 +238,43 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
   const commitText = () => {
     const text = textValue.trim();
     if (textAt && text) {
+      const shape: Shape = { kind: 'text', at: textAt, text };
       appendStroke(doc, {
         id: crypto.randomUUID(),
         fileId: activeFileId,
         authorId: user.id,
         color: user.color,
         width: STROKE_WIDTH,
-        shape: { kind: 'text', at: textAt, text },
+        shape,
+        anchor: anchorFor(shape),
         createdAt: Date.now(),
       });
     }
     setTextAt(null);
     setTextValue('');
   };
+
+  /**
+   * Three states. A legacy stroke (no anchor) renders exactly where it always did; an orphan falls
+   * back to the same coordinates but dimmed, so losing the code it described is visible rather
+   * than silent; an anchored stroke moves by however far its line has travelled.
+   */
+  const placed = useMemo(
+    () =>
+      strokes.map((stroke: Stroke) => {
+        const model = instance.getModel();
+        if (!stroke.anchor || !model) return { stroke, shift: 0, orphaned: false };
+
+        const resolution = resolveAnchor(doc, stroke.anchor);
+        if (resolution.kind === 'orphaned') return { stroke, shift: 0, orphaned: true };
+
+        const line = model.getPositionAt(resolution.index).lineNumber;
+        const anchoredTop = instance.getTopForLineNumber(line) + stroke.anchor.dy;
+        return { stroke, shift: anchoredTop - topmostPoint(stroke.shape).y, orphaned: false };
+      }),
+    // contentVersion is the point: it is what recomputes these after an edit.
+    [strokes, doc, instance, contentVersion],
+  );
 
   return (
     <svg
@@ -226,9 +287,14 @@ export function CanvasOverlay({ instance }: { instance: editor.IStandaloneCodeEd
       onPointerUp={onPointerUp}
     >
       <g transform={`translate(${-scroll.left}, ${-scroll.top})`}>
-        {strokes.map((stroke: Stroke) => (
-          <g key={stroke.id} data-testid="stroke">
-            <ShapeView shape={stroke.shape} color={stroke.color} />
+        {placed.map(({ stroke, shift, orphaned }) => (
+          <g
+            key={stroke.id}
+            data-testid="stroke"
+            data-orphaned={orphaned ? 'true' : undefined}
+            transform={`translate(0, ${shift})`}
+          >
+            <ShapeView shape={stroke.shape} color={stroke.color} opacity={orphaned ? 0.35 : 1} />
           </g>
         ))}
         {drafts.map((draft, i) => (
