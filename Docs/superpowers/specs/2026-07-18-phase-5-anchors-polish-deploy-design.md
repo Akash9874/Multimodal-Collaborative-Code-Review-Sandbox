@@ -38,11 +38,11 @@ you can demonstrate on purpose, the empty and loading states, keyboard shortcuts
 
 **Explicitly out of scope:**
 
-- **Retro-anchoring strokes drawn before this phase** (§3.6). They keep rendering as they do today.
+- **Retro-anchoring strokes drawn before this phase** (§3.7). They keep rendering as they do today.
 - **Running more than one file.** `RunRequest` is unchanged; Run still sends the active file.
 - **Execution in the hosted demo** (§6.5). Run is disabled there, with a stated reason.
 - **Moving, resizing, or editing a committed stroke.** Strokes remain immutable once drawn.
-- **Anchoring a shape to a *range*** rather than a single point (§3.4).
+- **Anchoring a shape to a *range*** rather than a single point (§3.5).
 - **A CI/CD pipeline.** The runbook is deliberately manual; see §6.6.
 
 ## 3. Line anchoring
@@ -61,7 +61,7 @@ would still have to be stored — the approach collapses into the one below, plu
 
 A **Yjs relative position** binds to a character in the CRDT itself. It survives concurrent edits by
 construction, and each client resolves it to an absolute index **locally**, with no write-back and
-therefore no race. Orphan detection is free: a deleted anchor resolves to `null`.
+therefore no race.
 
 ### 3.2 The encoding is JSON, not base64
 
@@ -94,7 +94,37 @@ Inserting a newline at exactly that offset is what "insert a line above the anno
 drawing follows its code. With `assoc < 0` it would bind to the end of the preceding text and stay put —
 the exact failure this phase exists to fix.
 
-### 3.4 The anchor is a point, not a range
+### 3.4 Orphan detection: the master spec is wrong about `null`
+
+Master spec §5.6 says that when the anchored text is deleted, "the relative position resolves to `null`".
+**It does not.** Measured against `yjs@13.6.31`:
+
+| Situation | `createAbsolutePositionFromRelativePosition` |
+|---|---|
+| anchored text deleted | `index: 4` — walks to a surviving neighbour |
+| whole document emptied | `index: 0` |
+| type never seen by this doc | `null` |
+
+`followUndoneDeletions` changes nothing; it returns the same index either way. So `null` means "I cannot
+place this at all", **not** "the code it described is gone", and building orphan detection on it would
+produce a feature where orphans never dim — the exact silent-vanishing failure §5.6 set out to prevent.
+
+The reliable signal is the anchored item's own tombstone. A relative position carries the item's id, and
+Yjs keeps deleted items as tombstones, so:
+
+```ts
+Y.getItem(doc.store, Y.createID(item.client, item.clock)).deleted; // false → true after deletion
+```
+
+This was verified to hold **across clients**: a peer that receives the deletion through a normal update
+independently reports `deleted === true`. That matters more than convenience — orphan state must look the
+same to everyone, or two people see different annotations over the same code. Deleting text *around* the
+anchored character correctly leaves it alive.
+
+`getItem` throws when the item is not in the store, which is the case for a client that has not yet
+received that update. Resolution therefore treats a throw the same as `null`: unplaceable, so orphaned.
+
+### 3.5 The anchor is a point, not a range
 
 One relative position and one `dy` per stroke. The topmost content point of the shape — minimum `y` across
 `points`, across `from`/`to`, or `at` — is mapped to a line, and the whole shape translates rigidly by
@@ -105,7 +135,7 @@ down without growing it. Anchoring both corners would stretch it, but a stretche
 that can orphan independently, and a rule for what a half-orphaned shape means. That complexity buys very
 little for hand-drawn annotation, so it is refused.
 
-### 3.5 Creating and resolving
+### 3.6 Creating and resolving
 
 **On commit**, in `CanvasOverlay`:
 
@@ -123,12 +153,12 @@ nested in the existing scroll group, where `shift` is the anchored top minus the
 Horizontal position never changes. Recompute on `onDidChangeModelContent`; scrolling is already handled by
 the outer transform.
 
-### 3.6 Three states, and no migration
+### 3.7 Three states, and no migration
 
 | State | Condition | Rendering |
 |---|---|---|
 | **anchored** | `anchor` present and resolves | follows its code |
-| **orphaned** | `anchor` present, resolves to `null` | stored coordinates, **dimmed** |
+| **orphaned** | `anchor` present, anchored item is a tombstone or unplaceable (§3.4) | stored coordinates, **dimmed** |
 | **legacy** | no `anchor` | stored coordinates, exactly as today |
 
 **Strokes drawn before this phase are never retro-anchored.** Two ways of doing it were considered and both
@@ -142,15 +172,21 @@ the only option where every client agrees, because the coordinates are stored.
 part of the type is not a schema change, and bumping the version would advertise a migration that does not
 exist. This is the same reasoning 4b used when it *stopped* reading `FileMeta.language`.
 
-### 3.7 Where the code lives
+### 3.8 Where the code lives
 
 Anchor encode/resolve is **pure** and goes in `packages/shared/src/anchor.ts`, over plain `Y.Text` and
 `Y.Doc`:
 
 ```ts
+export type AnchorResolution = { kind: 'anchored'; index: number } | { kind: 'orphaned' };
+
 export const createAnchor = (text: Y.Text, index: number, dy: number): Anchor;
-export const resolveAnchor = (doc: Y.Doc, anchor: Anchor): number | null;
+export const resolveAnchor = (doc: Y.Doc, anchor: Anchor): AnchorResolution;
 ```
+
+`resolveAnchor` returns a two-state result rather than `number | null`, because §3.4 established that
+"unplaceable" and "the code is gone" are different questions with different answers, and the caller must
+not have to remember to ask both. `legacy` is the absence of an `anchor` field and never reaches here.
 
 Keeping it out of the web app is what makes it testable without a browser, and it lets the two-client
 convergence test in `apps/ws-server/test` assert anchoring over a real socket (§9). Only the pixel↔line
@@ -315,7 +351,7 @@ is reproducible either way, which matters more than the container format.
 ```text
 packages/shared/src/
   anchor.ts                      NEW  createAnchor / resolveAnchor, pure, no DOM
-  anchor.test.ts                 NEW  round trip, orphan → null, assoc behaviour
+  anchor.test.ts                 NEW  round trip, tombstone → orphaned, assoc behaviour
   model.ts                       MOD  Anchor type exported alongside Stroke
 
 apps/web/
@@ -348,12 +384,14 @@ README.md                        MOD
 ## 9. Testing
 
 - **Unit, `packages/shared`** — anchor round trip; `assoc = 0` puts the anchor on the moved line after an
-  insert at its own offset; a deleted anchor resolves to `null`; topmost-point selection for each shape kind.
+  insert at its own offset (asserting the measured index, so a regression to `assoc = -1` fails loudly);
+  a deleted anchor resolves `orphaned` while a *neighbouring* deletion does not; an anchor from an unknown
+  doc resolves `orphaned` rather than throwing; topmost-point selection for each shape kind.
 - **Unit, `apps/web`** — `anchorLine` binary search against a stubbed `getTopForLineNumber`, including
   non-uniform line heights, which is the case the naive division gets wrong.
 - **Integration, two real clients** — A commits an anchored stroke, B inserts ten lines above it, and both
   docs resolve the anchor to the same line. This runs over a real socket, without a browser, which is only
-  possible because §3.7 keeps the logic in `shared`.
+  possible because §3.8 keeps the logic in `shared`.
 - **E2E** — the roadmap's own proof: draw over a block, insert lines above, assert the stroke's rendered `y`
   moved by roughly *n* × line height; and an orphan case where deleting the anchored text dims the stroke
   rather than removing it.
