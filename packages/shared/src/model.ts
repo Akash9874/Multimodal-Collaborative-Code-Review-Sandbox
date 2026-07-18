@@ -1,3 +1,5 @@
+import type { Anchor } from './anchor.js';
+
 export const SCHEMA_VERSION = 1;
 export const ROOM_ID_LENGTH = 10;
 export const MAX_NAME_LENGTH = 24;
@@ -98,8 +100,11 @@ export type Stroke = {
   color: string;
   width: number;
   shape: Shape;
-  /** Phase 5. `rel` is a base64-encoded Yjs relative position into the file's Y.Text. */
-  anchor?: { rel: string; dy: number };
+  /**
+   * Phase 5. A relative position into the file's Y.Text, so the stroke follows the code it
+   * describes. Absent on strokes drawn before Phase 5, which render where they always did.
+   */
+  anchor?: Anchor;
   createdAt: number;
 };
 
