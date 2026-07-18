@@ -84,6 +84,9 @@ export type RunRecord = {
 
 /** server → client. */
 export type ExecMessage =
+  // Sent once, first, on every /exec connection. The hosted demo has no executor, and a Run button
+  // that fails on click is worse than one that says why it cannot.
+  | { type: 'exec:hello'; executionEnabled: boolean }
   | { type: 'run:history'; runs: RunRecord[] }
   | {
       type: 'run:started';

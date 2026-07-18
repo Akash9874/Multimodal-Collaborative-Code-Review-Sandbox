@@ -4,9 +4,14 @@ export type ExecState = {
   runs: RunRecord[];
   /** A message meant for me alone — a rate-limit rejection for a run that never started. */
   notice: string | null;
+  /**
+   * Whether this server has an executor at all. Optimistic until the server says otherwise, so a
+   * client that never hears exec:hello does not disable Run on a guess.
+   */
+  executionEnabled: boolean;
 };
 
-export const EMPTY_EXEC_STATE: ExecState = { runs: [], notice: null };
+export const EMPTY_EXEC_STATE: ExecState = { runs: [], notice: null, executionEnabled: true };
 
 const ordered = (runs: RunRecord[]): RunRecord[] =>
   [...runs].sort((a, b) => a.createdAt - b.createdAt).slice(-RUN_HISTORY_LIMIT);
@@ -20,6 +25,9 @@ const patch = (runs: RunRecord[], id: string, change: Partial<RunRecord>): RunRe
  */
 export const applyExecMessage = (state: ExecState, message: ExecMessage): ExecState => {
   switch (message.type) {
+    case 'exec:hello':
+      return { ...state, executionEnabled: message.executionEnabled };
+
     case 'run:history': {
       // The server's copy is authoritative — it has the complete output, and we may have dropped
       // the socket half way through a run.
@@ -46,7 +54,7 @@ export const applyExecMessage = (state: ExecState, message: ExecMessage): ExecSt
         createdAt: message.at,
       };
 
-      return { runs: ordered([...state.runs, run]), notice: null };
+      return { ...state, runs: ordered([...state.runs, run]), notice: null };
     }
 
     case 'run:output': {

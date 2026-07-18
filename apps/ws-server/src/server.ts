@@ -20,6 +20,7 @@ export type SandboxServerOptions = {
   graceMs?: number;
   saveDebounceMs?: number;
   now?: () => number;
+  executionEnabled?: boolean;
 };
 
 export const createSandboxServer = (options: SandboxServerOptions = {}): Server => {
@@ -37,6 +38,7 @@ export const createSandboxServer = (options: SandboxServerOptions = {}): Server 
     roomLimiter: new TokenBuckets(ROOM_RATE, now),
     ipLimiter: new TokenBuckets(IP_RATE, now),
     now,
+    executionEnabled: options.executionEnabled ?? env.executionEnabled,
   };
 
   const http = createServer((req, res) => {
