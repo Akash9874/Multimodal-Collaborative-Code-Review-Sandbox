@@ -14,13 +14,14 @@ import { useRoomContext } from '@/lib/yjs/RoomContext';
 import { useFile } from '@/lib/yjs/useFile';
 
 export function RunBar() {
-  const { doc } = useRoomContext();
+  const { doc, isOffline } = useRoomContext();
   const { runActiveFile, isRunning, status, stdin, setStdin } = useExecContext();
   const { activeFileId } = useActiveFile();
   const file = useFile(activeFileId);
 
   const language = file ? languageForName(file.name) : undefined;
-  const offline = status !== 'connected';
+  // A pill claiming offline while Run still works would undercut the thing being demonstrated.
+  const offline = status !== 'connected' || isOffline;
   const disabled = offline || isRunning || !file || !language;
 
   const label = offline ? 'Offline' : isRunning ? 'Running…' : 'Run';
