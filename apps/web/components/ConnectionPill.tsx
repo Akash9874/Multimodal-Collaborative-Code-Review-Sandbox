@@ -1,7 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useRoomContext } from '@/lib/yjs/RoomContext';
 import type { ConnectionStatus } from '@/lib/yjs/useRoom';
+
+/** Long enough that a healthy connect never flashes the waking message. */
+const WAKING_AFTER_MS = 3_000;
 
 const LABELS: Record<ConnectionStatus, string> = {
   connecting: 'Connecting',
@@ -18,6 +22,18 @@ const DOTS: Record<ConnectionStatus, string> = {
 export function ConnectionPill({ status }: { status: ConnectionStatus }) {
   const { isOffline, setOffline, pendingUpdates } = useRoomContext();
 
+  // A free-tier server sleeps, so the first connection can take 30-50s. A pill that says
+  // "Connecting" for that long reads as broken; say what is actually happening instead.
+  const [waking, setWaking] = useState(false);
+  useEffect(() => {
+    if (status === 'connected' || isOffline) {
+      setWaking(false);
+      return;
+    }
+    const timer = setTimeout(() => setWaking(true), WAKING_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [status, isOffline]);
+
   // A manual disconnect and a real one must not read the same, or a genuine outage mid-demo looks
   // like the toggle and the demo quietly lies. The pending count is what makes the merge visible
   // on reconnect: without a number, a successful merge looks like nothing happened.
@@ -25,7 +41,9 @@ export function ConnectionPill({ status }: { status: ConnectionStatus }) {
     ? pendingUpdates > 0
       ? `Offline (you) — ${pendingUpdates} local edit${pendingUpdates === 1 ? '' : 's'}`
       : 'Offline (you)'
-    : LABELS[status];
+    : waking
+      ? 'Waking the sandbox…'
+      : LABELS[status];
 
   return (
     <button

@@ -67,6 +67,21 @@ test('a notice is rendered even when nothing has run', () => {
   expect(plain(renderRuns([], 'One run every 2 seconds.'))).toContain('One run every 2 seconds.');
 });
 
-test('an empty terminal renders nothing at all', () => {
-  expect(renderRuns([], null)).toBe('');
+test('an empty terminal says how to run something, rather than nothing at all', () => {
+  // An empty console that says nothing cannot be told from one that is still loading.
+  const out = plain(renderRuns([], null));
+
+  expect(out).toContain('No runs yet');
+  expect(out).toContain('Ctrl/Cmd + Enter');
+});
+
+test('once something has run, the hint is gone', () => {
+  expect(plain(renderRuns([run()], null))).not.toContain('No runs yet');
+});
+
+test('a notice replaces the hint rather than stacking with it', () => {
+  const out = plain(renderRuns([], 'One run every 2 seconds.'));
+
+  expect(out).toContain('One run every 2 seconds.');
+  expect(out).not.toContain('No runs yet');
 });
