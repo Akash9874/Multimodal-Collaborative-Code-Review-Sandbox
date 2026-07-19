@@ -29,7 +29,7 @@ const Terminal = dynamic(() => import('./Terminal').then((m) => m.Terminal), {
 
 export function Workspace({ roomId }: { roomId: string }) {
   return (
-    <JoinGate>
+    <JoinGate roomId={roomId}>
       {(user) => (
         <RoomProvider roomId={roomId} user={user}>
           {(status) => (
